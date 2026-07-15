@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LORANG RELOAD</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+:root{
+  --navy:#0f1c2e;
+  --navy2:#16293f;
+  --slate:#3a4a5e;
+  --paper:#f4f6f8;
+  --card:#ffffff;
+  --line:#dde3ea;
+  --blue:#2563eb;
+  --blue-d:#1d4ed8;
+  --green:#16a34a;
+  --green-bg:#e8f7ee;
+  --red:#dc2626;
+  --red-bg:#fdeaea;
+  --orange:#d97706;
+  --orange-bg:#fdf2e2;
+  --text:#1a2530;
+  --muted:#647184;
+  --mono:'JetBrains Mono','SF Mono',Consolas,monospace;
+}
+*{box-sizing:border-box;}
+html,body{height:100%;}
+body{
+  margin:0;
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  background:var(--paper);
+  color:var(--text);
+}
+header{
+  background:linear-gradient(135deg,var(--navy),var(--navy2));
+  color:#fff;
+  padding:14px 24px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  flex-wrap:wrap;
+  gap:14px;
+}
+header .brand{display:flex;align-items:center;gap:12px;}
+header .brand .mark{
+  width:38px;height:38px;border-radius:9px;
+  background:linear-gradient(135deg,var(--blue),#60a5fa);
+  display:flex;align-items:center;justify-content:center;
+  font-weight:800;font-size:15px;letter-spacing:-.5px;
+}
+header h1{font-size:18px;margin:0;font-weight:700;letter-spacing:.2px;}
+header .sub{font-size:12px;color:#9db1c9;margin-top:1px;}
+header .controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+header input[type=date]{
+  background:#1d3350;border:1px solid #2c4863;color:#fff;
+  padding:7px 10px;border-radius:7px;font-size:13px;font-family:inherit;
+}
+.btn{
+  border:none;border-radius:7px;padding:8px 14px;font-size:13px;font-weight:600;
+  cursor:pointer;font-family:inherit;transition:.15s;
+}
+.btn-blue{background:var(--blue);color:#fff;}
+.btn-blue:hover{background:var(--blue-d);}
+.btn-ghost{background:rgba(255,255,255,.08);color:#fff;border:1px solid rgba(255,255,255,.18);}
+.btn-ghost:hover{background:rgba(255,255,255,.15);}
+.btn-sm{padding:5px 10px;font-size:12px;border-radius:6px;}
+
+/* pleine page : plus de conteneur centré à largeur fixe */
+main{width:100%;padding:18px 22px 60px;}
+
+.panel{
+  background:var(--card);border:1px solid var(--line);border-radius:12px;
+  padding:20px;margin-bottom:16px;
+}
+.panel h2{font-size:14px;margin:0 0 12px;color:var(--slate);text-transform:uppercase;letter-spacing:.6px;}
+.panel-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px;}
+.panel-head h2{margin:0;}
+
+.uploadgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;}
+.uploadbox{
+  border:2px dashed var(--line);border-radius:10px;padding:16px;text-align:center;
+  font-size:12.5px;color:var(--muted);cursor:pointer;transition:.15s;
+}
+.uploadbox:hover{border-color:var(--blue);background:#f7fafe;}
+.uploadbox.ok{border-color:var(--green);background:var(--green-bg);color:#166534;}
+.uploadbox b{display:block;color:var(--text);font-size:13px;margin-bottom:4px;}
+.uploadbox input{display:none;}
+
+.status-line{font-size:12.5px;color:var(--muted);margin-top:10px;}
+.progress{height:6px;background:var(--line);border-radius:4px;overflow:hidden;margin-top:8px;display:none;}
+.progress .bar{height:100%;background:var(--blue);width:0%;transition:width .2s;}
+
+.legend{display:flex;gap:18px;font-size:12.5px;color:var(--muted);margin-bottom:14px;flex-wrap:wrap;}
+.legend span{display:flex;align-items:center;gap:6px;}
+.dot{width:10px;height:10px;border-radius:50%;display:inline-block;}
+.dot.g{background:var(--green);} .dot.r{background:var(--red);} .dot.o{background:var(--orange);}
+
+#map{height:460px;border-radius:10px;width:100%;}
+.leaflet-popup-content{font-family:inherit;font-size:12.5px;}
+.leaflet-popup-content b{font-family:var(--mono);}
+
+.columns-wrap{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;}
+@media(max-width:900px){.columns-wrap{grid-template-columns:1fr;}}
+.fleet-col h3{
+  font-size:13px;text-transform:uppercase;letter-spacing:.6px;color:var(--slate);
+  margin:0 0 10px;padding-bottom:8px;border-bottom:2px solid var(--line);
+}
+.fleet-col .count{font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0;}
+
+.trucklist{display:flex;flex-direction:column;gap:8px;}
+.truckrow{
+  border:1px solid var(--line);border-radius:10px;padding:12px 14px;
+  background:#fff;transition:box-shadow .2s, border-color .2s;
+  scroll-margin-top:16px;
+}
+.truckrow.status-g{border-left:4px solid var(--green);}
+.truckrow.status-r{border-left:4px solid var(--red);}
+.truckrow.status-o{border-left:4px solid var(--orange);}
+.truckrow.flash{box-shadow:0 0 0 3px rgba(37,99,235,.35);border-color:var(--blue);}
+.truckrow .toprow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+.plate{font-family:var(--mono);font-weight:700;font-size:14px;min-width:96px;}
+.vtype{font-size:11px;color:var(--muted);}
+.badge{
+  font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;letter-spacing:.3px;
+}
+.badge.g{background:var(--green-bg);color:var(--green);}
+.badge.r{background:var(--red-bg);color:var(--red);}
+.badge.o{background:var(--orange-bg);color:var(--orange);}
+.loc{font-size:12.5px;color:var(--slate);flex:1;min-width:160px;}
+.loc small{color:var(--muted);display:block;font-size:11px;}
+.truckrow .spacer{flex:1;}
+
+.matchresult{
+  margin-top:10px;width:100%;border-top:1px dashed var(--line);padding-top:10px;display:none;
+}
+.matchresult.open{display:block;}
+.freshbadge{font-size:11px;padding:2px 8px;border-radius:6px;background:#eef2ff;color:#4338ca;font-weight:600;}
+.gapnote{
+  font-size:11.5px;color:#92660c;background:#fdf6e3;border:1px solid #f3e0a8;
+  border-radius:6px;padding:7px 10px;margin-bottom:8px;
+}
+.clientcard{
+  border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-top:8px;
+  display:flex;justify-content:space-between;align-items:center;cursor:pointer;gap:10px;
+}
+.clientcard:hover{background:#f7fafe;border-color:var(--blue);}
+.clientcard .cname{font-weight:700;font-size:13.5px;}
+.clientcard .caddr{font-size:12px;color:var(--muted);}
+.clientcard .cdist{font-family:var(--mono);font-weight:700;font-size:13px;color:var(--blue);white-space:nowrap;}
+
+.modal-bg{
+  position:fixed;inset:0;background:rgba(15,28,46,.55);display:none;
+  align-items:center;justify-content:center;z-index:50;padding:20px;
+}
+.modal-bg.open{display:flex;}
+.modal{background:#fff;border-radius:12px;max-width:720px;width:100%;max-height:82vh;overflow:auto;padding:22px;}
+.modal h3{margin:0 0 4px;font-size:16px;}
+.modal .modalsub{font-size:12.5px;color:var(--muted);margin-bottom:14px;}
+table.hist{width:100%;border-collapse:collapse;font-size:12.5px;}
+table.hist th{text-align:left;color:var(--muted);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line);font-size:11px;text-transform:uppercase;}
+table.hist td{padding:7px 8px;border-bottom:1px solid #eef1f4;}
+.closebtn{float:right;cursor:pointer;color:var(--muted);font-size:20px;line-height:1;}
+
+.empty{color:var(--muted);font-size:13px;text-align:center;padding:30px 0;}
+.small{font-size:12px;color:var(--muted);}
+.footnote{font-size:11.5px;color:var(--muted);margin-top:16px;line-height:1.5;}
+
+.dotmarker{border-radius:50%;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4);}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="mark">LR</div>
+    <div>
+      <h1>LORANG RELOAD</h1>
+      <div class="sub">Anticipation des rechargements — Cellule 3PL Lorang &amp; Portmann</div>
+    </div>
+  </div>
+  <div class="controls">
+    <input type="date" id="refDate">
+    <button class="btn btn-ghost" id="toggleUpload">Fichiers</button>
+    <button class="btn btn-ghost" id="resetBtn">Réinitialiser</button>
+  </div>
+</header>
+
+<main>
+
+  <div class="panel" id="uploadPanel">
+    <h2>Charger les exports Winsped</h2>
+    <div class="uploadgrid">
+      <label class="uploadbox" id="box-vehicle">
+        <b>XXAV_Vehicle</b>
+        Flotte Lorang (camions + tractionnaires)
+        <input type="file" id="file-vehicle" accept=".xlsx">
+      </label>
+      <label class="uploadbox" id="box-customer">
+        <b>XXAV_CMCCustomer</b>
+        Référentiel clients
+        <input type="file" id="file-customer" accept=".xlsx">
+      </label>
+      <label class="uploadbox" id="box-order">
+        <b>XXAV_OrderOverview</b>
+        Historique commandes Winsped
+        <input type="file" id="file-order" accept=".xlsx">
+      </label>
+    </div>
+    <div class="progress" id="progress"><div class="bar" id="progressBar"></div></div>
+    <div class="status-line" id="statusLine">En attente des 3 fichiers…</div>
+    <div class="footnote">
+      V1 en mode fichier local (lecture directe des exports Excel). La connexion SharePoint/Power Automate en direct
+      (comme pour Lorang Fleet / Lorang Order) est prévue en phase suivante une fois le flux DAX mis en place côté Power BI.
+      Les commandes Winsped <b>non encore affectées à un camion Lorang Fleet</b> ne sont pas dans ce périmètre — seuls les
+      transports déjà réalisés par la flotte apparaissent ici (voir encart dans les résultats de recherche).
+    </div>
+  </div>
+
+  <div class="panel" id="mapPanel" style="display:none;">
+    <div class="panel-head"><h2>Carte — <span id="dayLabelMap"></span></h2>
+      <div class="legend" style="margin:0;">
+        <span><i class="dot g"></i> Livraison prévue ce jour</span>
+        <span><i class="dot o"></i> Rien avant J+n</span>
+        <span><i class="dot r"></i> Dernière position connue (rien de prévu)</span>
+      </div>
+    </div>
+    <div id="map"></div>
+  </div>
+
+  <div class="columns-wrap" id="columnsPanel" style="display:none;">
+    <div class="fleet-col">
+      <h3>Lorang Fleet (SA &amp; GmbH) <span class="count" id="countFleet"></span></h3>
+      <div class="trucklist" id="listFleet"></div>
+    </div>
+    <div class="fleet-col">
+      <h3>Sous-traitants <span class="count" id="countSub"></span></h3>
+      <div class="trucklist" id="listSub"></div>
+    </div>
+  </div>
+
+</main>
+
+<div class="modal-bg" id="modalBg">
+  <div class="modal">
+    <span class="closebtn" id="modalClose">&times;</span>
+    <h3 id="modalTitle"></h3>
+    <div class="modalsub" id="modalSub"></div>
+    <table class="hist">
+      <thead><tr><th>Date charg.</th><th>Chargement</th><th>Livraison</th><th>Destinataire</th><th>Véhicule</th></tr></thead>
+      <tbody id="modalBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   LORANG RELOAD V1.2 — carte + disposition Lorang Fleet / Sous-traitants
+   ============================================================ */
+
+const LU = 'LU';
+const RADIUS_KM = 50;
+const WINDOWS_MONTHS = [3, 6, 12];
+const MIN_CLIENTS_TARGET = 3;
+const MAX_GEOCODE_PER_SEARCH = 60;
+// KreNr Lorang SA et Lorang GmbH (confirmés sur XXAV_CMCCustomer) — le reste = sous-traitants
+const OWN_FLEET_KRENR = new Set([1000001, 1000003]);
+
+let VEHICLES = [];         // {plate, kreNr, label}
+let VEHICLE_PLATES = new Set();
+let CUSTOMERS = {};        // KundenNr -> {name, lkz, plz, ort, tel, email, sachbearb}
+let ORDERS = [];           // full parsed order rows
+let dataReady = {vehicle:false, customer:false, order:false};
+let map = null;
+let markers = {};          // plate -> Leaflet marker
+
+const geoCache = JSON.parse(localStorage.getItem('lorangreload_geocache') || '{}');
+function saveGeoCache(){ localStorage.setItem('lorangreload_geocache', JSON.stringify(geoCache)); }
+
+// ---------- date par défaut ----------
+document.getElementById('refDate').valueAsDate = new Date();
+
+// ---------- panneau upload repliable ----------
+document.getElementById('toggleUpload').addEventListener('click', ()=>{
+  const p = document.getElementById('uploadPanel');
+  p.style.display = (p.style.display === 'none') ? 'block' : 'none';
+});
+
+// ---------- helpers ----------
+function setStatus(msg){ document.getElementById('statusLine').textContent = msg; }
+function showProgress(pct){
+  const p = document.getElementById('progress');
+  p.style.display = pct===null ? 'none' : 'block';
+  if(pct!==null) document.getElementById('progressBar').style.width = pct+'%';
+}
+function excelDate(v){
+  if(v instanceof Date) return v;
+  if(typeof v === 'number'){
+    return new Date(Math.round((v - 25569) * 86400 * 1000));
+  }
+  return null;
+}
+function normCountry(c){ return (c||'').trim().toUpperCase(); }
+function postalPrefix(country, plz){
+  if(!plz) return '';
+  const c = normCountry(country);
+  const raw = String(plz).trim().toUpperCase();
+  if(['NL'].includes(c)){
+    const m = raw.match(/^\d{2}/);
+    return m ? m[0] : raw.slice(0,2);
+  }
+  if(['PL','LT','RO','BG'].includes(c)){
+    const digits = raw.replace(/\D/g,'');
+    return digits.slice(0,2);
+  }
+  const digits = raw.replace(/\D/g,'');
+  return digits.slice(0,2);
+}
+function colIndex(header, name){ return header.indexOf(name); }
+function cssEscape(s){ return s.replace(/[^a-zA-Z0-9]/g,'_'); }
+
+// ---------- lecture des fichiers ----------
+function readSheetArray(file, cb){
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const wb = XLSX.read(e.target.result, {type:'array', cellDates:true});
+    const sheetName = wb.SheetNames.find(n => n.toLowerCase().includes('xxav')) || wb.SheetNames[0];
+    const ws = wb.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(ws, {header:1, raw:true, defval:null});
+    cb(rows);
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+document.getElementById('file-vehicle').addEventListener('change', e => {
+  if(!e.target.files[0]) return;
+  setStatus('Lecture XXAV_Vehicle…');
+  readSheetArray(e.target.files[0], rows => {
+    const header = rows[0];
+    const iPlate = colIndex(header,'LKW');
+    const iKre = colIndex(header,'KreNr');
+    const iBez = colIndex(header,'Bez');
+    VEHICLES = [];
+    VEHICLE_PLATES = new Set();
+    for(let r=1;r<rows.length;r++){
+      const row = rows[r];
+      if(!row || !row[iPlate]) continue;
+      const plate = String(row[iPlate]).trim();
+      VEHICLES.push({plate, kreNr: row[iKre], label: row[iBez]||''});
+      VEHICLE_PLATES.add(plate);
+    }
+    dataReady.vehicle = true;
+    document.getElementById('box-vehicle').classList.add('ok');
+    document.getElementById('box-vehicle').querySelector('b').textContent = `XXAV_Vehicle ✓ (${VEHICLES.length} véhicules)`;
+    checkAllReady();
+  });
+});
+
+document.getElementById('file-customer').addEventListener('change', e => {
+  if(!e.target.files[0]) return;
+  setStatus('Lecture XXAV_CMCCustomer…');
+  readSheetArray(e.target.files[0], rows => {
+    const header = rows[0];
+    const iKn = colIndex(header,'KundenNr');
+    const iName = colIndex(header,'Name1');
+    const iLkz = colIndex(header,'LKZ');
+    const iPlz = colIndex(header,'PLZ');
+    const iOrt = colIndex(header,'Ort');
+    const iTel = colIndex(header,'Tel');
+    const iMail = colIndex(header,'eMail');
+    const iSb = colIndex(header,'Sachbearb');
+    CUSTOMERS = {};
+    for(let r=1;r<rows.length;r++){
+      const row = rows[r];
+      if(!row || row[iKn]==null) continue;
+      CUSTOMERS[row[iKn]] = {
+        name: row[iName]||'', lkz: row[iLkz]||'', plz: row[iPlz]||'', ort: row[iOrt]||'',
+        tel: row[iTel]||'', email: row[iMail]||'', sachbearb: row[iSb]||''
+      };
+    }
+    dataReady.customer = true;
+    document.getElementById('box-customer').classList.add('ok');
+    document.getElementById('box-customer').querySelector('b').textContent = `XXAV_CMCCustomer ✓ (${Object.keys(CUSTOMERS).length} clients)`;
+    checkAllReady();
+  });
+});
+
+document.getElementById('file-order').addEventListener('change', e => {
+  if(!e.target.files[0]) return;
+  setStatus('Lecture XXAV_OrderOverview… (peut prendre du temps si le fichier a beaucoup de colonnes)');
+  showProgress(5);
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    const wb = XLSX.read(ev.target.result, {type:'array', cellDates:true});
+    const sheetName = wb.SheetNames.find(n => n.toLowerCase().includes('xxav')) || wb.SheetNames[0];
+    const ws = wb.Sheets[sheetName];
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    showProgress(20);
+
+    const need = ['AufNr','KfzZugID','FFNr','EntladestelleLKZ','EntladestellePLZ','EntladestelleOrt',
+      'EntVonDat','EntBisDat','BelVonDat','AbsenderLKZ','AbsenderPLZ','AbsenderOrt',
+      'AufgeberNr','AuftraggeberName1','EmpfangerName1','EmpfangerLKZ'];
+    const colOf = {};
+    for(let c = range.s.c; c <= range.e.c; c++){
+      const cell = ws[XLSX.utils.encode_cell({r: range.s.r, c})];
+      const label = cell ? cell.v : null;
+      if(need.includes(label)) colOf[label] = c;
+    }
+    const missing = need.filter(n => !(n in colOf));
+    if(missing.length){
+      setStatus('Colonnes manquantes dans XXAV_OrderOverview : ' + missing.join(', '));
+    }
+
+    ORDERS = [];
+    const totalRows = range.e.r - range.s.r;
+    const kfzCol = colOf['KfzZugID'];
+    for(let r = range.s.r + 1; r <= range.e.r; r++){
+      if(kfzCol === undefined) break;
+      const plateCell = ws[XLSX.utils.encode_cell({r, c: kfzCol})];
+      const plate = plateCell ? String(plateCell.v).trim() : null;
+      if(!plate) continue;
+      const val = (name) => {
+        const c = colOf[name];
+        if(c === undefined) return null;
+        const cell = ws[XLSX.utils.encode_cell({r, c})];
+        return cell ? cell.v : null;
+      };
+      ORDERS.push({
+        aufNr: val('AufNr'),
+        plate,
+        ffNr: val('FFNr'),
+        delLkz: val('EntladestelleLKZ'), delPlz: val('EntladestellePLZ'), delOrt: val('EntladestelleOrt'),
+        entVon: excelDate(val('EntVonDat')), entBis: excelDate(val('EntBisDat')),
+        belVon: excelDate(val('BelVonDat')),
+        absLkz: val('AbsenderLKZ'), absPlz: val('AbsenderPLZ'), absOrt: val('AbsenderOrt'),
+        aufgeberNr: val('AufgeberNr'), aufgeberName: val('AuftraggeberName1'),
+        empName: val('EmpfangerName1'), empLkz: val('EmpfangerLKZ')
+      });
+      if(r % 15000 === 0){
+        showProgress(20 + Math.round(((r-range.s.r)/totalRows)*70));
+      }
+    }
+    showProgress(100);
+    setTimeout(()=>showProgress(null), 400);
+    dataReady.order = true;
+    document.getElementById('box-order').classList.add('ok');
+    document.getElementById('box-order').querySelector('b').textContent = `XXAV_OrderOverview ✓ (${ORDERS.length} lignes véhicule Lorang Fleet)`;
+    checkAllReady();
+  };
+  reader.readAsArrayBuffer(e.target.files[0]);
+});
+
+function checkAllReady(){
+  if(dataReady.vehicle && dataReady.customer && dataReady.order){
+    setStatus('Données chargées — filtrage sur ' + VEHICLE_PLATES.size + ' immatriculations Lorang Fleet.');
+    document.getElementById('uploadPanel').style.display = 'none';
+    document.getElementById('mapPanel').style.display = 'block';
+    document.getElementById('columnsPanel').style.display = 'grid';
+    renderDashboard();
+  }
+}
+
+document.getElementById('refDate').addEventListener('change', renderDashboard);
+document.getElementById('resetBtn').addEventListener('click', ()=>location.reload());
+
+// ---------- statut journalier des camions ----------
+// status 'g' = livraison ce jour · 'o' = rien avant J+n (livraison future connue)
+// 'r' = rien de prévu -> on retombe sur la DERNIÈRE position connue (livraison passée la plus récente) pour la carte/le matching
+function computeTruckStatuses(refDate){
+  const byPlate = {};
+  VEHICLES.forEach(v => byPlate[v.plate] = []);
+  ORDERS.forEach(o => {
+    if(byPlate[o.plate] && o.entVon) byPlate[o.plate].push(o);
+  });
+
+  const refStart = new Date(refDate); refStart.setHours(0,0,0,0);
+  const results = [];
+
+  Object.keys(byPlate).forEach(plate => {
+    const all = byPlate[plate];
+    const future = all.filter(o => o.entVon && o.entVon >= refStart).sort((a,b)=>a.entVon-b.entVon);
+    if(future.length){
+      const next = future[0];
+      const nextDay = new Date(next.entVon); nextDay.setHours(0,0,0,0);
+      const diffDays = Math.round((nextDay - refStart)/86400000);
+      if(diffDays === 0){
+        results.push({plate, status:'g', order:next, daysAhead:0, isFuture:true});
+      } else {
+        results.push({plate, status:'o', order:next, daysAhead:diffDays, isFuture:true});
+      }
+      return;
+    }
+    // rien à venir -> dernière position connue (passée)
+    const past = all.filter(o => o.entVon && o.entVon < refStart).sort((a,b)=>b.entVon-a.entVon);
+    if(past.length){
+      results.push({plate, status:'r', order:past[0], daysAhead:null, isFuture:false});
+    } else {
+      results.push({plate, status:'r', order:null, daysAhead:null, isFuture:false});
+    }
+  });
+
+  const order_ = {r:0, o:1, g:2};
+  results.sort((a,b)=> order_[a.status]-order_[b.status] || a.plate.localeCompare(b.plate));
+  return results;
+}
+
+function vehicleInfo(plate){
+  return VEHICLES.find(v => v.plate === plate) || {};
+}
+function isOwnFleet(plate){
+  const v = vehicleInfo(plate);
+  return OWN_FLEET_KRENR.has(v.kreNr);
+}
+
+// ---------- rendu du tableau de bord (carte + 2 colonnes) ----------
+async function renderDashboard(){
+  const refDate = document.getElementById('refDate').valueAsDate;
+  const label = refDate.toLocaleDateString('fr-FR',{weekday:'long', day:'2-digit', month:'long', year:'numeric'});
+  document.getElementById('dayLabelMap').textContent = label;
+
+  const statuses = computeTruckStatuses(refDate);
+  const listFleet = document.getElementById('listFleet');
+  const listSub = document.getElementById('listSub');
+  listFleet.innerHTML = '';
+  listSub.innerHTML = '';
+
+  if(!map){
+    map = L.map('map').setView([49.6, 6.1], 6); // centré Luxembourg/Grande Région
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors', maxZoom: 18
+    }).addTo(map);
+  }
+  Object.values(markers).forEach(m => map.removeLayer(m));
+  markers = {};
+
+  let nFleet = 0, nSub = 0;
+  const bounds = [];
+
+  for(const s of statuses){
+    const v = vehicleInfo(s.plate);
+    const own = OWN_FLEET_KRENR.has(v.kreNr);
+    own ? nFleet++ : nSub++;
+
+    const card = buildTruckCard(s, v);
+    (own ? listFleet : listSub).appendChild(card);
+
+    // placement carte : seulement si on a un point de référence (livraison future ou passée)
+    if(s.order && s.order.delLkz){
+      const coords = await geocode(s.order.delLkz, s.order.delPlz, s.order.delOrt);
+      if(coords){
+        const color = s.status==='g' ? '#16a34a' : s.status==='o' ? '#d97706' : '#dc2626';
+        const icon = L.divIcon({
+          className:'', html:`<div class="dotmarker" style="width:16px;height:16px;background:${color};"></div>`,
+          iconSize:[16,16], iconAnchor:[8,8]
+        });
+        const marker = L.marker([coords.lat, coords.lon], {icon}).addTo(map);
+        const statusTxt = s.status==='g' ? 'Livraison ce jour' : s.status==='o' ? `Rien avant J+${s.daysAhead}` : 'Dernière position connue';
+        marker.bindPopup(`<b>${s.plate}</b><br>${statusTxt}<br>${s.order.delOrt||''} (${s.order.delPlz||''}, ${s.order.delLkz||''})`);
+        marker.on('click', () => focusTruckCard(s.plate));
+        markers[s.plate] = marker;
+        bounds.push([coords.lat, coords.lon]);
+      }
+    }
+  }
+
+  document.getElementById('countFleet').textContent = `(${nFleet})`;
+  document.getElementById('countSub').textContent = `(${nSub})`;
+
+  if(bounds.length){
+    map.fitBounds(bounds, {padding:[30,30], maxZoom:9});
+  }
+
+  wireMatchButtons();
+}
+
+function buildTruckCard(s, v){
+  const row = document.createElement('div');
+  row.className = 'truckrow status-'+s.status;
+  row.id = 'truckcard-'+cssEscape(s.plate);
+  let locHtml = '';
+  let badgeTxt = '';
+  if(s.status==='g'){
+    badgeTxt = 'Livraison ce jour';
+    locHtml = `${s.order.delOrt||'?'} (${s.order.delPlz||''}, ${s.order.delLkz||''})<small>Client : ${s.order.aufgeberName||'—'}</small>`;
+  } else if(s.status==='o'){
+    badgeTxt = `Rien avant J+${s.daysAhead}`;
+    locHtml = `Prochaine livraison : ${s.order.delOrt||'?'} (${s.order.delPlz||''}, ${s.order.delLkz||''})<small>le ${s.order.entVon.toLocaleDateString('fr-FR')}</small>`;
+  } else if(s.order){
+    badgeTxt = 'Rien de prévu';
+    locHtml = `Dernière position connue : ${s.order.delOrt||'?'} (${s.order.delPlz||''}, ${s.order.delLkz||''})<small>livré le ${s.order.entVon.toLocaleDateString('fr-FR')}</small>`;
+  } else {
+    badgeTxt = 'Rien de prévu';
+    locHtml = `<small>Aucune livraison (passée ou future) trouvée dans l'historique chargé</small>`;
+  }
+  row.innerHTML = `
+    <div class="toprow">
+      <div class="plate">${s.plate}</div>
+      <div class="vtype">${v.label || ''}</div>
+      <div class="badge ${s.status}">${badgeTxt}</div>
+      <div class="loc">${locHtml}</div>
+      <div class="spacer"></div>
+      ${s.status!=='g' ? `<button class="btn btn-blue btn-sm" data-plate="${s.plate}">Chercher rechargement</button>` : ''}
+    </div>
+    <div class="matchresult" id="match-${cssEscape(s.plate)}"></div>
+  `;
+  return row;
+}
+
+function wireMatchButtons(){
+  document.querySelectorAll('button[data-plate]').forEach(btn => {
+    btn.addEventListener('click', () => runMatching(btn.dataset.plate, btn));
+  });
+}
+
+function focusTruckCard(plate){
+  const el = document.getElementById('truckcard-'+cssEscape(plate));
+  if(!el) return;
+  el.scrollIntoView({behavior:'smooth', block:'center'});
+  el.classList.add('flash');
+  setTimeout(()=>el.classList.remove('flash'), 1600);
+}
+
+// ---------- géocodage (Nominatim, avec cache) ----------
+async function geocode(country, plz, ort){
+  const key = `${normCountry(country)}|${(plz||'').trim()}|${(ort||'').trim()}`.toUpperCase();
+  if(geoCache[key]) return geoCache[key];
+  const q = encodeURIComponent(`${plz||''} ${ort||''}, ${country||''}`);
+  try{
+    const resp = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${q}`);
+    const json = await resp.json();
+    if(json && json[0]){
+      const coords = {lat: parseFloat(json[0].lat), lon: parseFloat(json[0].lon)};
+      geoCache[key] = coords;
+      saveGeoCache();
+      return coords;
+    }
+  }catch(err){ console.warn('geocode fail', key, err); }
+  return null;
+}
+function haversine(a, b){
+  const R = 6371;
+  const dLat = (b.lat-a.lat)*Math.PI/180;
+  const dLon = (b.lon-a.lon)*Math.PI/180;
+  const la1 = a.lat*Math.PI/180, la2 = b.lat*Math.PI/180;
+  const h = Math.sin(dLat/2)**2 + Math.cos(la1)*Math.cos(la2)*Math.sin(dLon/2)**2;
+  return 2*R*Math.asin(Math.sqrt(h));
+}
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+// ---------- algorithme de matching ----------
+async function runMatching(plate, btnEl){
+  const container = document.getElementById('match-'+cssEscape(plate));
+  container.classList.add('open');
+  container.innerHTML = '<div class="small">Recherche en cours…</div>';
+  btnEl.disabled = true;
+
+  const truckStatus = computeTruckStatuses(document.getElementById('refDate').valueAsDate).find(s=>s.plate===plate);
+  const ref = truckStatus.order;
+  if(!ref || !ref.delLkz){
+    container.innerHTML = '<div class="small">Pas de point de livraison connu pour ce camion — impossible de chercher un rechargement.</div>';
+    btnEl.disabled = false;
+    return;
+  }
+  if(normCountry(ref.delLkz) === LU){
+    container.innerHTML = '<div class="small">Livraison au Luxembourg — hors périmètre LORANG RELOAD (v1 : tous pays sauf LU).</div>';
+    btnEl.disabled = false;
+    return;
+  }
+
+  const deliveryCoords = await geocode(ref.delLkz, ref.delPlz, ref.delOrt);
+  if(!deliveryCoords){
+    container.innerHTML = '<div class="small">Géocodage du point de livraison impossible — adresse insuffisante.</div>';
+    btnEl.disabled = false;
+    return;
+  }
+
+  const refCountry = normCountry(ref.delLkz);
+  const refPrefix = postalPrefix(ref.delLkz, ref.delPlz);
+  const today = new Date();
+
+  const coarse = ORDERS.filter(o =>
+    o.absLkz && normCountry(o.absLkz) === refCountry &&
+    normCountry(o.absLkz) !== LU &&
+    postalPrefix(o.absLkz, o.absPlz) === refPrefix &&
+    o.belVon
+  );
+
+  let usedWindow = null;
+  let matchedClients = [];
+
+  for(const months of WINDOWS_MONTHS){
+    const cutoff = new Date(today); cutoff.setMonth(cutoff.getMonth()-months);
+    const candidates = coarse.filter(o => o.belVon >= cutoff);
+
+    const addrMap = new Map();
+    candidates.forEach(o => {
+      const key = `${normCountry(o.absLkz)}|${o.absPlz}|${o.absOrt}`.toUpperCase();
+      if(!addrMap.has(key)) addrMap.set(key, {country:o.absLkz, plz:o.absPlz, ort:o.absOrt, orders:[]});
+      addrMap.get(key).orders.push(o);
+    });
+
+    const addrKeys = Array.from(addrMap.keys()).slice(0, MAX_GEOCODE_PER_SEARCH);
+    const nearby = [];
+
+    for(const key of addrKeys){
+      const info = addrMap.get(key);
+      const coords = await geocode(info.country, info.plz, info.ort);
+      if(!coords) continue;
+      const dist = haversine(deliveryCoords, coords);
+      if(dist <= RADIUS_KM){
+        info.orders.forEach(o => nearby.push({order:o, distance:dist}));
+      }
+      await sleep(150);
+    }
+
+    const byClient = new Map();
+    nearby.forEach(({order,distance}) => {
+      const cid = order.aufgeberNr;
+      if(cid==null) return;
+      if(!byClient.has(cid) || byClient.get(cid).distance > distance){
+        byClient.set(cid, {aufgeberNr:cid, name:order.aufgeberName, distance, order});
+      }
+    });
+
+    matchedClients = Array.from(byClient.values()).sort((a,b)=>a.distance-b.distance);
+    usedWindow = months;
+    if(matchedClients.length >= MIN_CLIENTS_TARGET) break;
+  }
+
+  const gapNote = `<div class="gapnote">⚠ Les commandes Winsped pas encore affectées à un camion Lorang Fleet ne sont pas incluses (périmètre de données actuel = historique déjà réalisé par la flotte). Seuls des clients probables issus de l'historique sont proposés ci-dessous, pas des rechargements déjà réservés.</div>`;
+
+  if(matchedClients.length === 0){
+    container.innerHTML = gapNote + `<div class="small">Aucun client trouvé à moins de ${RADIUS_KM} km sur les 12 derniers mois (zone : ${ref.delOrt}, ${refCountry}).</div>`;
+    btnEl.disabled = false;
+    return;
+  }
+
+  let html = gapNote + `<div style="margin-bottom:8px;">
+    <span class="freshbadge">trouvé sur ${usedWindow} mois</span>
+    <span class="small" style="margin-left:8px;">Zone de référence : ${ref.delOrt} (${ref.delPlz}, ${refCountry}) — rayon ${RADIUS_KM} km</span>
+  </div>`;
+  matchedClients.forEach(c => {
+    const cust = CUSTOMERS[c.aufgeberNr];
+    const contact = cust ? [cust.tel, cust.email].filter(Boolean).join(' · ') : '';
+    html += `<div class="clientcard" data-client="${c.aufgeberNr}" data-plate="${plate}">
+      <div>
+        <div class="cname">${c.name || cust?.name || 'Client #'+c.aufgeberNr}</div>
+        <div class="caddr">${contact || 'Contact non trouvé dans XXAV_CMCCustomer'}</div>
+      </div>
+      <div class="cdist">${c.distance.toFixed(1)} km</div>
+    </div>`;
+  });
+  container.innerHTML = html;
+  btnEl.disabled = false;
+
+  container.querySelectorAll('.clientcard').forEach(card => {
+    card.addEventListener('click', () => openClientHistory(card.dataset.client, ref));
+  });
+}
+
+// ---------- historique client (10 derniers transports dans la zone) ----------
+function openClientHistory(aufgeberNr, ref){
+  const cust = CUSTOMERS[aufgeberNr];
+  const refCountry = normCountry(ref.delLkz);
+  const refPrefix = postalPrefix(ref.delLkz, ref.delPlz);
+
+  const rows = ORDERS.filter(o =>
+    String(o.aufgeberNr) === String(aufgeberNr) &&
+    o.absLkz && normCountry(o.absLkz) === refCountry &&
+    postalPrefix(o.absLkz, o.absPlz) === refPrefix &&
+    o.belVon
+  ).sort((a,b)=> b.belVon - a.belVon).slice(0,10);
+
+  document.getElementById('modalTitle').textContent = cust?.name || ('Client #'+aufgeberNr);
+  document.getElementById('modalSub').textContent = rows.length
+    ? `${rows.length} derniers transports dans la zone ${ref.delOrt} (${refCountry})`
+    : 'Aucun transport détaillé trouvé pour ce client dans cette zone.';
+
+  const tbody = document.getElementById('modalBody');
+  tbody.innerHTML = rows.map(o => `
+    <tr>
+      <td>${o.belVon ? o.belVon.toLocaleDateString('fr-FR') : '—'}</td>
+      <td>${o.absOrt||''} (${o.absPlz||''}, ${o.absLkz||''})</td>
+      <td>${o.delOrt||''} (${o.delPlz||''}, ${o.delLkz||''})</td>
+      <td>${o.empName||'—'} ${o.empLkz? '('+o.empLkz+')':''}</td>
+      <td>${o.plate}</td>
+    </tr>
+  `).join('');
+
+  document.getElementById('modalBg').classList.add('open');
+}
+document.getElementById('modalClose').addEventListener('click', ()=> document.getElementById('modalBg').classList.remove('open'));
+document.getElementById('modalBg').addEventListener('click', (e)=>{ if(e.target.id==='modalBg') document.getElementById('modalBg').classList.remove('open'); });
+
+</script>
+</body>
+</html>
