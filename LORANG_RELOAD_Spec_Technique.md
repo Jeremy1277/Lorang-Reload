@@ -46,15 +46,40 @@ Affichage : pays, code postal, ville de livraison (pour les camions en vert), ou
 
 ## 4. Algorithme de matching (cœur de l'appli)
 
+### 4.0 Mapping des tables réelles (confirmé sur échantillon)
+
+**Filtre "véhicule Lorang Fleet"** — `XXAV_Vehicle.KreNr` croisé avec `XXAV_CMCCustomer.KundenNr` donne **36 `KreNr` distincts** = le périmètre exact Lorang Fleet (Lorang S.A., Lorang GmbH, + tous les tractionnaires actifs : AT Trading, Ekrany, Vanost, Nostrada, Truck Aftan, Di Egidio, etc.). C'est cette liste de 36 `KreNr` qui sert de filtre, **pas** le champ `FremdLKW` (ne discrimine pas correctement Lorang vs affrétés).
+
+Dans `XXAV_OrderOverview`, le rattachement au véhicule/transporteur se fait via :
+- `KfzZugID` → matche `XXAV_Vehicle.LKW` (immatriculation tracteur)
+- `FFNr` → matche `KundenNr`/`KreNr` (code transporteur, doit être dans la liste des 36)
+
+**Adresses — deux blocs redondants pour chaque point, à ne retenir qu'une fois :**
+- Pickup : `AbgLKZ/AbgPLZ/AbgOrt` = `BeladestelleLKZ/PLZ/Ort` (valeurs identiques)
+- Livraison : `EmgLKZ/EmgPLZ/EmgOrt` = `EntladestelleLKZ/PLZ/Ort` (valeurs identiques)
+
+**Dates** : `BelVonDat/BelBisDat` = fenêtre de **chargement** · `EntVonDat/EntBisDat` = fenêtre de **livraison**
+
+**⚠️ Distinction clé — deux rôles différents pour le rechargement :**
+
+| Champ | Rôle | Usage dans l'algo |
+|---|---|---|
+| `AbsNr` / `AbsenderName1` / `AbsenderLKZ` / `AbsenderPLZ` / `AbsenderOrt` | **Expéditeur physique** — localisation réelle du chargement | Géocodage + calcul de distance |
+| `AufgeberNr` / `AuftraggeberName1` | **Donneur d'ordre** — le décideur commercial à contacter, pas forcément sur place | Identité du "client potentiel" affiché, croisé avec `XXAV_CMCCustomer` (`KundenNr` = `AufgeberNr`) pour récupérer Tel/eMail/Sachbearb |
+
+Les deux coïncident souvent (le même acteur expédie et commande), mais pas toujours (ex. observé : expéditeur = Deufol Waremme SA en Belgique, donneur d'ordre = Mölnlycke Health Care AB en Suède — c'est Mölnlycke qu'on démarche, pas l'entrepôt Deufol).
+
 ### 4.1 Point de référence
-Pour un camion en rouge/orange, le point de référence utilisé pour la recherche de rechargement est **la dernière livraison prévue ou en cours du camion** (pas de sélection manuelle en v1).
+Pour un camion en rouge/orange, le point de référence utilisé pour la recherche de rechargement est **la dernière livraison prévue ou en cours du camion** (champs `EntladestelleLKZ/PLZ/Ort`, pas de sélection manuelle en v1).
 
 ### 4.2 Filtre grossier (avant géocodage)
-1. Pays identique au point de référence (hors Luxembourg)
-2. Code postal — 2 premiers chiffres (présélection large, évite de géocoder tout Winsped à chaque requête)
+1. Pays identique au point de référence, sur `AbsenderLKZ` (hors Luxembourg)
+2. Code postal `AbsenderPLZ` — présélection large
+
+⚠️ Les codes postaux ne sont pas tous numériques purs (ex. NL : `"7463 PH"`, espace + lettres). Le filtre "2 premiers caractères" ne peut pas être un simple substring uniforme — il faut une normalisation par pays (LU/FR/DE/BE : 2 premiers chiffres numériques ; NL/PL et autres formats alphanumériques : règle dédiée à définir pays par pays).
 
 ### 4.3 Fenêtre temporelle adaptative
-Recherche progressive dans l'historique Winsped, élargie uniquement si nécessaire :
+Recherche progressive dans l'historique Winsped (sur `BelVonDat`, date de chargement), élargie uniquement si nécessaire :
 
 1. **2-3 mois** en premier
 2. Si résultats insuffisants (seuil à définir, ex. < 3 clients potentiels) → **élargir à 6 mois**
@@ -63,17 +88,35 @@ Recherche progressive dans l'historique Winsped, élargie uniquement si nécessa
 L'UI affiche un badge indiquant la fenêtre sur laquelle le résultat a été trouvé (ex. "trouvé sur 3 mois" = zone active/fiable vs "trouvé sur 12 mois" = zone rare, résultat à prendre avec prudence). Pas de classification a priori des zones — l'élargissement progressif s'adapte tout seul à la densité réelle de trafic de chaque zone.
 
 ### 4.4 Géocodage
-- **Point de livraison du camion** : géocodage à la volée (volume faible, un point par recherche)
-- **Historique Winsped** : géocodage en **batch avec cache persistant** (ne pas regéocoder à chaque ouverture d'appli — coût et lenteur inutiles). Cache à stocker en SharePoint (liste ou fichier JSON), rafraîchi de façon incrémentale (uniquement les nouvelles lignes Winsped).
+- **Point de livraison du camion** : géocodage à la volée de `EntladestelleLKZ/PLZ/Ort` (volume faible, un point par recherche)
+- **Historique Winsped** : géocodage en **batch avec cache persistant** des adresses `AbsenderLKZ/PLZ/Ort` (ne pas regéocoder à chaque ouverture d'appli — coût et lenteur inutiles). Cache à stocker en SharePoint (liste ou fichier JSON), rafraîchi de façon incrémentale (uniquement les nouvelles lignes Winsped).
 - Réutilisation du pattern déjà en place dans Run & Bike Trainer (Nominatim / ORS) pour la méthode de géocodage.
 
 ### 4.5 Calcul de distance
-- Distance à vol d'oiseau (haversine) entre point de livraison et candidats géocodés — suffisant pour un rayon de 50km, pas besoin de routing routier en v1.
+- Distance à vol d'oiseau (haversine) entre point de livraison du camion et adresses **Absender** géocodées — suffisant pour un rayon de 50km, pas besoin de routing routier en v1.
 - Seuil de rétention : **≤ 50 km**
 
 ### 4.6 Résultat
-- Liste des clients potentiels (issus de `XXAV_CMCCustomer`, croisés sur l'historique Winsped filtré), triés par distance croissante, avec badge de fraîcheur de la fenêtre temporelle
-- Clic sur un client → affichage des **10 derniers transports Winsped** dans la zone géographique concernée (date, véhicule, adresse de chargement)
+- Liste des **clients potentiels** = donneurs d'ordre (`AufgeberNr`/`AuftraggeberName1`, croisés avec `XXAV_CMCCustomer` pour contact), triés par distance de leur point de chargement (`Absender`), avec badge de fraîcheur de la fenêtre temporelle
+- Clic sur un client → affichage des **10 derniers transports Winsped** de ce donneur d'ordre dans la zone géographique concernée, avec le détail complet du trajet :
+  - Date de chargement (`BelVonDat`)
+  - Adresse de chargement réelle (`AbsenderLKZ/PLZ/Ort`)
+  - Adresse de livraison réelle (`EntladestelleLKZ/PLZ/Ort`)
+  - Véhicule utilisé (`KfzZugID`)
+  - **Destinataire affiché en simple libellé** (`EmpfangerName1` + `EmpfangerLKZ`/ville) — pas de croisement avec `XXAV_CMCCustomer` pour ses coordonnées complètes ; seul le donneur d'ordre (le client démarché) a droit à la fiche contact enrichie
+
+### 4.7 Deux périmètres de données distincts (important pour le dimensionnement de l'import)
+
+L'appli combine deux types de résultats qui ne s'appuient **pas sur les mêmes données** :
+
+| Type de résultat | Ce que c'est | Données nécessaires |
+|---|---|---|
+| **Clients probables** (§4.1 à 4.6, déjà spécifié) | Prédiction basée sur les habitudes passées d'un client dans la zone | Historique **Lorang Fleet uniquement**, fenêtre 3-12 mois en arrière (`BelVonDat` < aujourd'hui) |
+| **Rechargements déjà réservés, pas encore affectés** | Commandes réellement saisies dans Winsped, toutes flottes confondues, mais qui n'ont pas encore de camion assigné | Commandes **toutes flottes** (pas de filtre `KfzZugID`/`FFNr` sur les 36 `KreNr`), mais uniquement à partir d'**aujourd'hui** (`BelVonDat >= TODAY()`) et où `KfzZugID` est **vide/non renseigné** |
+
+Point important : le deuxième cas **ne nécessite aucune profondeur d'historique** — uniquement du présent/futur. Donc pas d'import massif de tout Winsped à prévoir ; une requête DAX supplémentaire ciblée sur les commandes non affectées à partir d'aujourd'hui suffit, en plus de la requête historique déjà prévue pour les clients probables.
+
+⚠️ Ce deuxième volet n'est pas encore implémenté dans l'appli (V1.2) — actuellement seuls les "clients probables" sont affichés, avec un encart explicite dans l'UI signalant l'absence de ce second périmètre.
 
 ---
 
@@ -83,11 +126,10 @@ L'UI affiche un badge indiquant la fenêtre sur laquelle le résultat a été tr
 Camion Lorang Fleet sans chargement (🔴 J / 🟠 J+1...)
    → dernière livraison prévue/en cours = point de référence
    → géocodage du point de livraison (à la volée)
-   → recherche Winsped, véhicules Lorang Fleet uniquement (SA + GMBH + tractionnaires)
-      → filtre pays (hors LU) + 2 premiers chiffres CP
-      → fenêtre 2-3 mois → si insuffisant → 6 mois → si insuffisant → 12 mois
-   → géocodage des candidats (cache) + distance haversine
-   → ≤ 50 km → liste clients potentiels avec badge fraîcheur
+   → DEUX RECHERCHES EN PARALLÈLE :
+      A) Clients probables : historique Lorang Fleet (3-12 mois), filtre pays+CP, distance ≤50km
+      B) Rechargements déjà réservés non affectés : commandes toutes flottes, BelVonDat >= aujourd'hui, KfzZugID vide, distance ≤50km
+   → affichage combiné, avec distinction claire entre les deux (l'un est une prédiction, l'autre une donnée réelle)
    → clic client → 10 derniers transports Winsped dans la zone
 ```
 
@@ -122,3 +164,38 @@ Cohérent avec le stack habituel des apps 3PL :
 2. Valider le seuil d'élargissement de fenêtre temporelle et la source de coordonnées à privilégier (Winsped historique vs fiche client actuelle)
 3. Prototyper l'algo de matching sur un extrait de données réel
 4. Construire le squelette applicatif en réutilisant la structure Lorang Fleet
+
+---
+
+## 9. Phase 2 — Extension Timocom
+
+**Statut** : hors périmètre v1, à traiter après la mise en production du matching interne Winsped.
+
+### 9.1 Principe
+Timocom expose une API REST (Freight Exchange, v3 JSON) avec deux modules pertinents pour Reload :
+
+| Module | Usage envisagé |
+|---|---|
+| **Search API** | Interroger en direct la bourse de fret Timocom sur la zone + dates du camion 🔴/🟠, en complément de l'historique Winsped interne — remonte des offres réelles et actuelles, pas seulement des clients historiques |
+| **Offer API** (vehicle space offers) | Publier automatiquement la disponibilité d'un camion resté vide trop longtemps sur la bourse Timocom, pour élargir la recherche au-delà des clients connus |
+
+### 9.2 Intégration dans le flux
+```
+Camion 🔴/🟠
+   → matching interne (historique Winsped — v1, déjà spécifié en §4)
+   → EN PARALLÈLE (phase 2) : appel Search API Timocom sur zone + dates du camion
+   → affichage combiné : "clients historiques probables" + "offres marché Timocom en direct"
+   → option : publication auto d'une vehicle space offer si camion vide au-delà d'un seuil (à définir)
+```
+
+### 9.3 Prérequis
+- **Compte Timocom** : déjà en place côté Lorang ✅
+- **Accès API activé** sur ce compte — à confirmer/demander auprès du contact commercial Timocom (l'accès API n'est pas automatiquement inclus dans un compte utilisateur standard)
+- **Identifiants API** (Basic Auth ou OAuth2) fournis par Timocom une fois l'accès activé
+- **Process d'approbation applicative** Timocom (guidelines de design, favicon obligatoire, etc.) — délai d'intégration annoncé de 1 à 4 jours selon le TMS
+- Doc de référence : https://developer.timocom.com
+
+### 9.4 Points à valider avant de lancer cette phase
+- Confirmer si le compte Timocom Lorang inclut déjà l'accès API ou s'il faut l'ouvrir (coût éventuel à vérifier)
+- Définir le seuil de vide au-delà duquel on publie automatiquement une vehicle space offer (éviter de spammer le marché pour un camion vide 2h)
+- Décider si les offres Timocom en direct viennent en complément visuel de l'historique interne, ou si elles priment dessus en cas de conflit d'affichage
