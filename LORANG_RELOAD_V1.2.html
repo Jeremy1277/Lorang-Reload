@@ -511,10 +511,24 @@ async function getToken(interactive){
   const r=await app.acquireTokenPopup({scopes:GRAPH_SCOPES});
   return r.accessToken;
 }
+let cachedSiteId=null;
+async function getSiteId(token){
+  if(cachedSiteId)return cachedSiteId;
+  const url=`https://graph.microsoft.com/v1.0/sites/${GRAPH_HOST}:${GRAPH_SITE_PATH}`;
+  const resp=await fetch(url,{headers:{'Authorization':'Bearer '+token,'Accept':'application/json'}});
+  if(!resp.ok){
+    let detail='';try{detail=await resp.text();}catch(e){}
+    throw new Error(`Résolution du site SharePoint → HTTP ${resp.status}${detail?' · '+detail.substring(0,200):''}`);
+  }
+  const j=await resp.json();
+  cachedSiteId=j.id;
+  console.log('[Reload][Graph] Site résolu:',cachedSiteId);
+  return cachedSiteId;
+}
 async function fetchGraphJson(filePath,token){
-  const sitePath=encodeURIComponent(GRAPH_SITE_PATH).replace(/%2F/g,'/');
+  const siteId=await getSiteId(token);
   const fp=filePath.replace(/^\/+/,'').split('/').map(encodeURIComponent).join('/');
-  const url=`https://graph.microsoft.com/v1.0/sites/${GRAPH_HOST}:${sitePath}:/drive/root:/${fp}:/content`;
+  const url=`https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root:/${fp}:/content`;
   const resp=await fetch(url,{headers:{'Authorization':'Bearer '+token,'Accept':'application/json'}});
   if(!resp.ok){
     let detail='';try{detail=await resp.text();}catch(e){}
