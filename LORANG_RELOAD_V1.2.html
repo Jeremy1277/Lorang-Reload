@@ -294,7 +294,8 @@ let CUSTOMERS = {};        // KundenNr -> {name, lkz, plz, ort, tel, email, sach
 let ORDERS = [];           // full parsed order rows
 let dataReady = {vehicle:false, customer:false, order:false};
 let map = null;
-let markers = {};          // plate -> Leaflet marker
+let markers = {};
+let mapRenderToken = 0;          // plate -> Leaflet marker
 
 const geoCache = JSON.parse(localStorage.getItem('lorangreload_geocache') || '{}');
 function saveGeoCache(){ localStorage.setItem('lorangreload_geocache', JSON.stringify(geoCache)); }
@@ -731,19 +732,27 @@ async function renderDashboard(){
   markers = {};
 
   let nFleet = 0, nSub = 0;
-  const bounds = [];
 
+  // 1) Rendu immédiat des listes — les boutons sont utilisables tout de suite
   for(const s of statuses){
     const v = vehicleInfo(s.plate);
     const own = OWN_FLEET_KRENR.has(v.kreNr);
     own ? nFleet++ : nSub++;
-
     const card = buildTruckCard(s, v);
     (own ? listFleet : listSub).appendChild(card);
+  }
+  document.getElementById('countFleet').textContent = `(${nFleet})`;
+  document.getElementById('countSub').textContent = `(${nSub})`;
 
-    // placement carte : seulement si on a un point de référence (livraison future ou passée)
-    if(s.order && s.order.delLkz){
+  // 2) Marqueurs carte en tâche de fond (géocodage Nominatim throttlé, n'empêche rien d'autre)
+  const renderToken = ++mapRenderToken;
+  (async () => {
+    const bounds = [];
+    for(const s of statuses){
+      if(renderToken !== mapRenderToken) return; // un nouveau rendu a pris la main
+      if(!(s.order && s.order.delLkz)) continue;
       const coords = await geocode(s.order.delLkz, s.order.delPlz, s.order.delOrt);
+      if(renderToken !== mapRenderToken) return;
       if(coords){
         const color = s.status==='g' ? '#6a9a1d' : s.status==='o' ? '#F5831F' : '#D32F2F';
         const icon = L.divIcon({
@@ -756,18 +765,11 @@ async function renderDashboard(){
         marker.on('click', () => focusTruckCard(s.plate));
         markers[s.plate] = marker;
         bounds.push([coords.lat, coords.lon]);
+        if(bounds.length) map.fitBounds(bounds, {padding:[30,30], maxZoom:9});
       }
+      await sleep(120);
     }
-  }
-
-  document.getElementById('countFleet').textContent = `(${nFleet})`;
-  document.getElementById('countSub').textContent = `(${nSub})`;
-
-  if(bounds.length){
-    map.fitBounds(bounds, {padding:[30,30], maxZoom:9});
-  }
-
-  wireMatchButtons();
+  })();
 }
 
 function buildTruckCard(s, v){
@@ -803,11 +805,11 @@ function buildTruckCard(s, v){
   return row;
 }
 
-function wireMatchButtons(){
-  document.querySelectorAll('button[data-plate]').forEach(btn => {
-    btn.addEventListener('click', () => runMatching(btn.dataset.plate, btn));
-  });
-}
+// Délégation globale : les boutons fonctionnent dès leur apparition, quel que soit le rendu
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest ? e.target.closest('button[data-plate]') : null;
+  if(btn && !btn.disabled) runMatching(btn.dataset.plate, btn);
+});
 
 function focusTruckCard(plate){
   const el = document.getElementById('truckcard-'+cssEscape(plate));
