@@ -81,6 +81,8 @@ header input[type=date]{
 .btn-dataflow{background:rgba(133,188,37,.18);color:#c8f06a;border:1px solid rgba(133,188,37,.35);font-weight:600;}
 .btn-dataflow:hover{background:rgba(133,188,37,.28);}
 .btn-dataflow.loading{opacity:.7;cursor:wait;}
+.btn-outline{background:#fff;color:var(--blue);border:1px solid var(--blue);}
+.btn-outline:hover{background:var(--blue);color:#fff;}
 .btn-sm{padding:5px 10px;font-size:12px;border-radius:6px;}
 
 /* pleine page : plus de conteneur centré à largeur fixe */
@@ -246,6 +248,7 @@ table.hist td{padding:7px 8px;border-bottom:1px solid #eef1f4;}
         <span><i class="dot o"></i> Rien avant J+n</span>
         <span><i class="dot r"></i> Dernière position connue (rien de prévu)</span>
       </div>
+      <button class="btn btn-outline btn-sm" id="toggleLuBtn" title="Les camions livrant au Luxembourg (et sans position connue) sont masqués par défaut — hors périmètre de recherche Reload"></button>
     </div>
     <div id="map"></div>
   </div>
@@ -295,7 +298,8 @@ let ORDERS = [];           // full parsed order rows
 let dataReady = {vehicle:false, customer:false, order:false};
 let map = null;
 let markers = {};
-let mapRenderToken = 0;          // plate -> Leaflet marker
+let mapRenderToken = 0;
+let showAllTrucks = false;          // plate -> Leaflet marker
 
 const geoCache = JSON.parse(localStorage.getItem('lorangreload_geocache') || '{}');
 function saveGeoCache(){ localStorage.setItem('lorangreload_geocache', JSON.stringify(geoCache)); }
@@ -660,6 +664,7 @@ window.addEventListener('DOMContentLoaded',async()=>{
 
 document.getElementById('refDate').addEventListener('change', renderDashboard);
 document.getElementById('resetBtn').addEventListener('click', ()=>location.reload());
+document.getElementById('toggleLuBtn').addEventListener('click', ()=>{ showAllTrucks = !showAllTrucks; renderDashboard(); });
 
 // ---------- statut journalier des camions ----------
 // status 'g' = livraison ce jour · 'o' = rien avant J+n (livraison future connue)
@@ -716,7 +721,13 @@ async function renderDashboard(){
   const label = refDate.toLocaleDateString('fr-FR',{weekday:'long', day:'2-digit', month:'long', year:'numeric'});
   document.getElementById('dayLabelMap').textContent = label;
 
-  const statuses = computeTruckStatuses(refDate);
+  const allStatuses = computeTruckStatuses(refDate);
+  // Par défaut : uniquement les camions livrant HORS Luxembourg (périmètre de recherche Reload)
+  const statuses = showAllTrucks ? allStatuses
+    : allStatuses.filter(s => s.order && s.order.delLkz && normCountry(s.order.delLkz) !== LU);
+  const hiddenCount = allStatuses.length - statuses.length;
+  const luBtn = document.getElementById('toggleLuBtn');
+  luBtn.textContent = showAllTrucks ? 'Masquer LU & sans position' : `Afficher tout (+${hiddenCount})`;
   const listFleet = document.getElementById('listFleet');
   const listSub = document.getElementById('listSub');
   listFleet.innerHTML = '';
