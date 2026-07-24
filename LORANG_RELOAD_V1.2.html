@@ -436,7 +436,7 @@ document.getElementById('file-order').addEventListener('change', e => {
     const range = XLSX.utils.decode_range(ws['!ref']);
     showProgress(20);
 
-    const need = ['AufNr','KfzZugID','FFNr','EntladestelleLKZ','EntladestellePLZ','EntladestelleOrt',
+    const need = ['AufNr','KfzZugID','FFNr','TourNr','EntladestelleLKZ','EntladestellePLZ','EntladestelleOrt',
       'EntVonDat','EntBisDat','BelVonDat','AbsenderLKZ','AbsenderPLZ','AbsenderOrt',
       'AufgeberNr','AuftraggeberName1','EmpfangerName1','EmpfangerLKZ'];
     const colOf = {};
@@ -467,6 +467,7 @@ document.getElementById('file-order').addEventListener('change', e => {
       ORDERS.push({
         aufNr: val('AufNr'),
         plate,
+        tourNr: val('TourNr'),
         ffNr: val('FFNr'),
         delLkz: val('EntladestelleLKZ'), delPlz: val('EntladestellePLZ'), delOrt: val('EntladestelleOrt'),
         entVon: excelDate(val('EntVonDat')), entBis: excelDate(val('EntBisDat')),
@@ -611,6 +612,7 @@ function ingestOrders(rows){
     ORDERS.push({
       aufNr:r.AufNr,
       plate,
+      tourNr:r.TourNr,
       ffNr:r.FFNr,
       delLkz:r.EntladestelleLKZ,delPlz:r.EntladestellePLZ,delOrt:r.EntladestelleOrt,
       entVon:parseAnyDate(r.EntVonDat),entBis:parseAnyDate(r.EntBisDat),
@@ -712,13 +714,35 @@ function computeTruckStatuses(refDate){
       }
       return;
     }
-    // rien à venir -> dernière position connue (passée)
+    // rien à venir -> fin du dernier tour affecté dans Winsped
     const past = all.filter(o => o.entVon && o.entVon < refStart).sort((a,b)=>b.entVon-a.entVon);
     if(past.length){
       results.push({plate, status:'r', order:past[0], daysAhead:null, isFuture:false});
     } else {
       results.push({plate, status:'r', order:null, daysAhead:null, isFuture:false});
     }
+  });
+
+  // Fin d'activité connue par camion = destination finale du DERNIER TOUR affecté (TourNr)
+  // (fallback : chaque dossier = son propre "tour" si TourNr absent du flux)
+  results.forEach(res => {
+    const all = byPlate[res.plate] || [];
+    const dated = all.filter(o => o.entVon);
+    if(!dated.length){ res.endOrder = null; res.refOrder = res.order; return; }
+    const groups = new Map();
+    dated.forEach(o => {
+      const key = (o.tourNr!=null && o.tourNr!=='') ? 'T'+o.tourNr : 'A'+(o.aufNr!=null?o.aufNr:Math.random());
+      if(!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(o);
+    });
+    let lastTour = null, lastTourMax = null;
+    groups.forEach(list => {
+      const max = list.reduce((m,o)=> o.entVon>m ? o.entVon : m, list[0].entVon);
+      if(lastTourMax===null || max>lastTourMax){ lastTourMax = max; lastTour = list; }
+    });
+    res.endOrder = lastTour.slice().sort((a,b)=>b.entVon-a.entVon)[0];
+    // Référence de recherche : livraison du jour pour les verts, fin du dernier tour sinon
+    res.refOrder = (res.status==='g') ? res.order : (res.endOrder || res.order);
   });
 
   const order_ = {r:0, o:1, g:2};
@@ -743,7 +767,7 @@ async function renderDashboard(){
   const allStatuses = computeTruckStatuses(refDate);
   // Par défaut : uniquement les camions livrant HORS Luxembourg (périmètre de recherche Reload)
   const baseStatuses = showAllTrucks ? allStatuses
-    : allStatuses.filter(s => s.order && s.order.delLkz && normCountry(s.order.delLkz) !== LU);
+    : allStatuses.filter(s => s.refOrder && s.refOrder.delLkz && normCountry(s.refOrder.delLkz) !== LU);
   const hiddenCount = allStatuses.length - baseStatuses.length;
   const luBtn = document.getElementById('toggleLuBtn');
   luBtn.textContent = showAllTrucks ? 'Masquer LU & sans position' : `Afficher tout (+${hiddenCount})`;
@@ -751,7 +775,7 @@ async function renderDashboard(){
   // Chips pays : générées dynamiquement, uniquement pour les pays réellement présents
   const countryCounts = {};
   baseStatuses.forEach(s => {
-    const c = (s.order && s.order.delLkz) ? normCountry(s.order.delLkz) : null;
+    const c = (s.refOrder && s.refOrder.delLkz) ? normCountry(s.refOrder.delLkz) : null;
     if(c) countryCounts[c] = (countryCounts[c]||0) + 1;
   });
   Array.from(countryFilter).forEach(c => { if(!countryCounts[c]) countryFilter.delete(c); });
@@ -762,7 +786,7 @@ async function renderDashboard(){
   chipBar.style.display = countryList.length > 1 ? 'flex' : 'none';
 
   const statuses = countryFilter.size
-    ? baseStatuses.filter(s => s.order && s.order.delLkz && countryFilter.has(normCountry(s.order.delLkz)))
+    ? baseStatuses.filter(s => s.refOrder && s.refOrder.delLkz && countryFilter.has(normCountry(s.refOrder.delLkz)))
     : baseStatuses;
   const listFleet = document.getElementById('listFleet');
   const listSub = document.getElementById('listSub');
@@ -797,8 +821,9 @@ async function renderDashboard(){
     const bounds = [];
     for(const s of statuses){
       if(renderToken !== mapRenderToken) return; // un nouveau rendu a pris la main
-      if(!(s.order && s.order.delLkz)) continue;
-      const coords = await geocode(s.order.delLkz, s.order.delPlz, s.order.delOrt);
+      const mo = s.refOrder || s.order;
+      if(!(mo && mo.delLkz)) continue;
+      const coords = await geocode(mo.delLkz, mo.delPlz, mo.delOrt);
       if(renderToken !== mapRenderToken) return;
       if(coords){
         const color = s.status==='g' ? '#6a9a1d' : s.status==='o' ? '#F5831F' : '#D32F2F';
@@ -807,8 +832,8 @@ async function renderDashboard(){
           iconSize:[16,16], iconAnchor:[8,8]
         });
         const marker = L.marker([coords.lat, coords.lon], {icon}).addTo(map);
-        const statusTxt = s.status==='g' ? 'Livraison ce jour' : s.status==='o' ? `Rien avant J+${s.daysAhead}` : 'Dernière position connue';
-        marker.bindPopup(`<b>${s.plate}</b><br>${statusTxt}<br>${s.order.delOrt||''} (${s.order.delPlz||''}, ${s.order.delLkz||''})`);
+        const statusTxt = s.status==='g' ? 'Livraison ce jour' : 'Fin du dernier tour affecté';
+        marker.bindPopup(`<b>${s.plate}</b><br>${statusTxt}<br>${mo.delOrt||''} (${mo.delPlz||''}, ${mo.delLkz||''})`);
         marker.on('click', () => focusTruckCard(s.plate));
         markers[s.plate] = marker;
         bounds.push([coords.lat, coords.lon]);
@@ -830,10 +855,13 @@ function buildTruckCard(s, v){
     locHtml = `${s.order.delOrt||'?'} (${s.order.delPlz||''}, ${s.order.delLkz||''})<small>Client : ${s.order.aufgeberName||'—'}</small>`;
   } else if(s.status==='o'){
     badgeTxt = `Rien avant J+${s.daysAhead}`;
-    locHtml = `Prochaine livraison : ${s.order.delOrt||'?'} (${s.order.delPlz||''}, ${s.order.delLkz||''})<small>le ${s.order.entVon.toLocaleDateString('fr-FR')}</small>`;
-  } else if(s.order){
+    const eo = s.refOrder || s.order;
+    const sameAsNext = eo === s.order;
+    locHtml = `Fin du dernier tour : ${eo.delOrt||'?'} (${eo.delPlz||''}, ${eo.delLkz||''})<small>livraison finale le ${eo.entVon.toLocaleDateString('fr-FR')}${sameAsNext?'':' · prochaine livraison le '+s.order.entVon.toLocaleDateString('fr-FR')+' à '+(s.order.delOrt||'?')}</small>`;
+  } else if(s.refOrder || s.order){
+    const eo = s.refOrder || s.order;
     badgeTxt = 'Rien de prévu';
-    locHtml = `Dernière position connue : ${s.order.delOrt||'?'} (${s.order.delPlz||''}, ${s.order.delLkz||''})<small>livré le ${s.order.entVon.toLocaleDateString('fr-FR')}</small>`;
+    locHtml = `Fin du dernier tour : ${eo.delOrt||'?'} (${eo.delPlz||''}, ${eo.delLkz||''})<small>livré le ${eo.entVon.toLocaleDateString('fr-FR')}</small>`;
   } else {
     badgeTxt = 'Rien de prévu';
     locHtml = `<small>Aucune livraison (passée ou future) trouvée dans l'historique chargé</small>`;
@@ -901,7 +929,7 @@ async function runMatching(plate, btnEl){
   btnEl.disabled = true;
 
   const truckStatus = computeTruckStatuses(document.getElementById('refDate').valueAsDate).find(s=>s.plate===plate);
-  const ref = truckStatus.order;
+  const ref = truckStatus.refOrder || truckStatus.order;
   if(!ref || !ref.delLkz){
     container.innerHTML = '<div class="small">Pas de point de livraison connu pour ce camion — impossible de chercher un rechargement.</div>';
     btnEl.disabled = false;
