@@ -526,6 +526,24 @@ const HISTORY_FLOWS=[
   {key:'history4', file:'reload_history4.json'}
 ];
 function matchSource(){ return HISTORY.length ? HISTORY : ORDERS; }
+// Mapping TourNr -> tracteur (table Tour de Winsped) : permet de rattacher les dossiers
+// FUTURS, qui n'ont pas encore de KfzZugID (789/860 constatés le 24/07) — l'affectation
+// vit au niveau du tour tant que le tour n'a pas démarré.
+let TOURMAP = {};   // tourNr -> plate
+function ingestTours(rows){
+  TOURMAP = {};
+  rows.forEach(r=>{
+    const tour = r.TourNr!=null ? r.TourNr : (r.Tournummer!=null ? r.Tournummer : r.TourID);
+    const plate = [r.KfzZugID, r.LKW, r.PolKz, r.Kfz].find(v=>v!=null&&String(v).trim()!=='');
+    if(tour!=null && plate) TOURMAP[tour] = String(plate).trim();
+  });
+  console.log('[Reload][Graph] TOURMAP:',Object.keys(TOURMAP).length,'tours affectés');
+}
+function resolvePlate(o){
+  if(o.plate) return o.plate;
+  if(o.tourNr!=null && TOURMAP[o.tourNr]) return TOURMAP[o.tourNr];
+  return '';
+}
 function ingestHistory(rows){
   rows.forEach(r=>{
     const plate=r.KfzZugID!=null?String(r.KfzZugID).trim():'';
@@ -632,7 +650,9 @@ function ingestCustomer(rows){
 function ingestOrders(rows){
   ORDERS=[];
   rows.forEach(r=>{
-    const plate=r.KfzZugID!=null?String(r.KfzZugID).trim():'';
+    let plate=r.KfzZugID!=null?String(r.KfzZugID).trim():'';
+    const tourNrRaw=r.TourNr;
+    if(!plate && tourNrRaw!=null && TOURMAP[tourNrRaw]) plate=TOURMAP[tourNrRaw];
     if(!plate)return;
     ORDERS.push({
       aufNr:r.AufNr,
@@ -663,6 +683,9 @@ async function loadDataFlow(interactive){
     }
     btn.innerHTML='&#9889; Chargement\u2026';
     setStatus('Chargement des 3 flux depuis SharePoint\u2026');
+    // Mapping tours d'abord (best-effort) : nécessaire pour rattacher les dossiers futurs sans KfzZugID
+    try{ ingestTours(rowsFrom(await fetchGraphJson('reload_tours.json',token))); }
+    catch(e){ console.warn('[Reload][Graph] reload_tours.json absent — dossiers futurs non affectés invisibles.',e.message); }
     const results=await Promise.allSettled(RELOAD_FLOWS.map(f=>fetchGraphJson(f.file,token)));
     // Historique matching en parallèle, best-effort
     Promise.allSettled(HISTORY_FLOWS.map(f=>fetchGraphJson(f.file,token))).then(hr=>{
