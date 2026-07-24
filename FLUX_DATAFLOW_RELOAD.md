@@ -85,3 +85,59 @@ SELECTCOLUMNS(
 - **Visites suivantes** : connexion silencieuse (cache localStorage) + chargement auto des 3 flux, zéro clic.
 - **Secours** : l'upload manuel des 3 exports Excel reste disponible (bouton « Fichiers »).
 - En cas de flux manquant/en erreur : statut affiché, détail en console, l'app reste utilisable en mode manuel.
+
+
+## ⚠️ Limite 15 Mo — architecture v2 des exports orders (2026-07-24)
+
+L'API Power BI (ExecuteQueries) plafonne chaque réponse à **15 Mo** et l'action Power
+Automate **tronque silencieusement** au-delà (le run reste vert). Avec 370 jours × toutes
+colonnes, `reload_orders.json` atteignait exactement 15,00 Mo → dossiers récents manquants.
+
+Nouvelle architecture (4 requêtes orders au lieu d'1) :
+
+| Fichier | Rôle | Fenêtre | Colonnes |
+|---|---|---|---|
+| `reload_orders.json` | Statuts & tours des camions | `TODAY()-30` → futur | complètes (17) |
+| `reload_history1.json` | Matching clients probables | `TODAY()-370` → `TODAY()-180` | réduites (12) |
+| `reload_history2.json` | Matching clients probables | `TODAY()-180` → aujourd'hui | réduites (12) |
+
+L'app fusionne history1+history2 pour le matching ; si absents, elle retombe sur
+`reload_orders.json` (mode dégradé 30 jours).
+
+### reload_orders.json — filtre mis à jour (30 jours)
+Remplacer dans la requête existante : `>= TODAY() - 370` → `>= TODAY() - 30`
+
+### reload_history1.json
+```dax
+EVALUATE
+SELECTCOLUMNS(
+    FILTER(
+        XXAV__OrderOverview,
+        NOT ( ISBLANK ( XXAV__OrderOverview[KfzZugID] ) )
+            && XXAV__OrderOverview[BelVonDat] >= TODAY() - 370
+            && XXAV__OrderOverview[BelVonDat] <  TODAY() - 180
+    ),
+    "KfzZugID",          XXAV__OrderOverview[KfzZugID],
+    "BelVonDat",         XXAV__OrderOverview[BelVonDat],
+    "AbsenderLKZ",       XXAV__OrderOverview[AbsenderLKZ],
+    "AbsenderPLZ",       XXAV__OrderOverview[AbsenderPLZ],
+    "AbsenderOrt",       XXAV__OrderOverview[AbsenderOrt],
+    "AufgeberNr",        XXAV__OrderOverview[AufgeberNr],
+    "AuftraggeberName1", XXAV__OrderOverview[AuftraggeberName1],
+    "EntladestelleLKZ",  XXAV__OrderOverview[EntladestelleLKZ],
+    "EntladestellePLZ",  XXAV__OrderOverview[EntladestellePLZ],
+    "EntladestelleOrt",  XXAV__OrderOverview[EntladestelleOrt],
+    "EmpfangerName1",    XXAV__OrderOverview[EmpfangerName1],
+    "EmpfangerLKZ",      XXAV__OrderOverview[EmpfangerLKZ]
+)
+```
+
+### reload_history2.json
+Même requête que history1 avec le filtre :
+```dax
+        NOT ( ISBLANK ( XXAV__OrderOverview[KfzZugID] ) )
+            && XXAV__OrderOverview[BelVonDat] >= TODAY() - 180
+```
+
+Contrôle de santé : si un des fichiers `reload_*.json` approche 14 Mo, resserrer les
+fenêtres ou re-découper — ne jamais laisser un export atteindre 15,00 Mo pile (= troncature).

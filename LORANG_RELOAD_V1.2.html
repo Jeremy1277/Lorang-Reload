@@ -305,7 +305,8 @@ const OWN_FLEET_KRENR = new Set([1000001, 1000003]);
 let VEHICLES = [];         // {plate, kreNr, label}
 let VEHICLE_PLATES = new Set();
 let CUSTOMERS = {};        // KundenNr -> {name, lkz, plz, ort, tel, email, sachbearb}
-let ORDERS = [];           // full parsed order rows
+let ORDERS = [];           // dossiers récents (statuts/tours)
+let HISTORY = [];          // historique 12 mois pour le matching (colonnes réduites)
 let dataReady = {vehicle:false, customer:false, order:false};
 let map = null;
 let markers = {};
@@ -515,6 +516,28 @@ const RELOAD_FLOWS=[
   {key:'customer', file:'reload_customer.json', box:'box-customer', label:'XXAV_CMCCustomer'},
   {key:'order',    file:'reload_orders.json',   box:'box-order',    label:'XXAV_OrderOverview'}
 ];
+// Historique 12 mois pour le matching, coupé en 2 fichiers pour rester sous la limite de 15 Mo
+// de l'API Power BI (l'export est tronqué SILENCIEUSEMENT au-delà). Non bloquants : à défaut,
+// le matching retombe sur ORDERS.
+const HISTORY_FLOWS=[
+  {key:'history1', file:'reload_history1.json'},
+  {key:'history2', file:'reload_history2.json'}
+];
+function matchSource(){ return HISTORY.length ? HISTORY : ORDERS; }
+function ingestHistory(rows){
+  rows.forEach(r=>{
+    const plate=r.KfzZugID!=null?String(r.KfzZugID).trim():'';
+    if(!plate)return;
+    HISTORY.push({
+      plate,
+      belVon:parseAnyDate(r.BelVonDat),
+      absLkz:r.AbsenderLKZ,absPlz:r.AbsenderPLZ,absOrt:r.AbsenderOrt,
+      aufgeberNr:r.AufgeberNr,aufgeberName:r.AuftraggeberName1,
+      delLkz:r.EntladestelleLKZ,delPlz:r.EntladestellePLZ,delOrt:r.EntladestelleOrt,
+      empName:r.EmpfangerName1,empLkz:r.EmpfangerLKZ
+    });
+  });
+}
 
 let msalApp=null;
 async function getMSAL(){if(!msalApp){msalApp=new msal.PublicClientApplication(MSAL_CONFIG);await msalApp.initialize();}return msalApp;}
@@ -639,6 +662,17 @@ async function loadDataFlow(interactive){
     btn.innerHTML='&#9889; Chargement\u2026';
     setStatus('Chargement des 3 flux depuis SharePoint\u2026');
     const results=await Promise.allSettled(RELOAD_FLOWS.map(f=>fetchGraphJson(f.file,token)));
+    // Historique matching en parallèle, best-effort
+    Promise.allSettled(HISTORY_FLOWS.map(f=>fetchGraphJson(f.file,token))).then(hr=>{
+      HISTORY=[];
+      hr.forEach((res,i)=>{
+        if(res.status==='fulfilled'){
+          try{ingestHistory(rowsFrom(res.value));}
+          catch(e){console.warn('[Reload][Graph] history',HISTORY_FLOWS[i].file,e.message);}
+        } else console.warn('[Reload][Graph] history absent:',HISTORY_FLOWS[i].file,res.reason&&res.reason.message);
+      });
+      console.log('[Reload][Graph] HISTORY:',HISTORY.length,'lignes pour le matching',HISTORY.length?'':'(fallback sur ORDERS)');
+    });
     const errors=[];
     results.forEach((res,i)=>{
       const f=RELOAD_FLOWS[i];
@@ -956,7 +990,7 @@ async function runMatching(plate, btnEl){
   const refPrefix = postalPrefix(ref.delLkz, ref.delPlz);
   const today = new Date();
 
-  const coarse = ORDERS.filter(o =>
+  const coarse = matchSource().filter(o =>
     o.absLkz && normCountry(o.absLkz) === refCountry &&
     normCountry(o.absLkz) !== LU &&
     postalPrefix(o.absLkz, o.absPlz) === refPrefix &&
@@ -1042,7 +1076,7 @@ function openClientHistory(aufgeberNr, ref){
   const refCountry = normCountry(ref.delLkz);
   const refPrefix = postalPrefix(ref.delLkz, ref.delPlz);
 
-  const rows = ORDERS.filter(o =>
+  const rows = matchSource().filter(o =>
     String(o.aufgeberNr) === String(aufgeberNr) &&
     o.absLkz && normCountry(o.absLkz) === refCountry &&
     postalPrefix(o.absLkz, o.absPlz) === refPrefix &&
