@@ -735,10 +735,14 @@ function computeTruckStatuses(refDate){
       if(!groups.has(key)) groups.set(key, []);
       groups.get(key).push(o);
     });
-    let lastTour = null, lastTourMax = null;
+    let lastTour = null, lastTourMax = null, lastTourNr = null;
     groups.forEach(list => {
       const max = list.reduce((m,o)=> o.entVon>m ? o.entVon : m, list[0].entVon);
-      if(lastTourMax===null || max>lastTourMax){ lastTourMax = max; lastTour = list; }
+      const tn = Number(list[0].tourNr);
+      const better = lastTourMax===null
+        || max > lastTourMax
+        || (max.getTime() === lastTourMax.getTime() && !isNaN(tn) && (isNaN(lastTourNr) || tn > lastTourNr));
+      if(better){ lastTourMax = max; lastTour = list; lastTourNr = tn; }
     });
     res.endOrder = lastTour.slice().sort((a,b)=>b.entVon-a.entVon)[0];
     // Référence de recherche : livraison du jour pour les verts, fin du dernier tour sinon
