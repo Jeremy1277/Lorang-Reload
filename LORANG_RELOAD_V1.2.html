@@ -780,7 +780,12 @@ function computeTruckStatuses(refDate){
         || (max.getTime() === lastTourMax.getTime() && !isNaN(tn) && (isNaN(lastTourNr) || tn > lastTourNr));
       if(better){ lastTourMax = max; lastTour = list; lastTourNr = tn; }
     });
-    res.endOrder = lastTour.slice().sort((a,b)=>b.entVon-a.entVon)[0];
+    // Maillon final du tour : livraison qui ne sert de chargement à aucun autre maillon du même tour
+    // (gère les tours multi-étapes livrés le même jour, ex. Ratingen→Saffig puis Saffig→Schieren)
+    const loadKeys = new Set(lastTour.map(o => ((o.absPlz||'')+'|'+(o.absOrt||'')).toUpperCase()));
+    const finals = lastTour.filter(o => !loadKeys.has(((o.delPlz||'')+'|'+(o.delOrt||'')).toUpperCase()));
+    const pool = finals.length ? finals : lastTour;
+    res.endOrder = pool.slice().sort((a,b)=> (b.entVon-a.entVon) || (b.belVon&&a.belVon ? b.belVon-a.belVon : 0) || ((b.aufNr||0)-(a.aufNr||0)))[0];
     // Référence de recherche : livraison du jour pour les verts, fin du dernier tour sinon
     res.refOrder = (res.status==='g') ? res.order : (res.endOrder || res.order);
   });
