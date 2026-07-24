@@ -141,3 +141,24 @@ Même requête que history1 avec le filtre :
 
 Contrôle de santé : si un des fichiers `reload_*.json` approche 14 Mo, resserrer les
 fenêtres ou re-découper — ne jamais laisser un export atteindre 15,00 Mo pile (= troncature).
+
+
+## Dossiers futurs & table Tour (constat du 24/07/2026)
+
+**Constat** : dans `XXAV__OrderOverview`, `KfzZugID` n'est renseigné qu'au démarrage du
+tour (789 dossiers futurs sur 860 avaient un KfzZugID vide). L'affectation tracteur des
+dossiers planifiés vit au niveau du TOUR. Conséquence : sans croisement, Reload ne voit
+pas le planning à venir (c'est aussi vrai pour Fleet).
+
+**Solution prévue** : exporter la table `Tour` (mapping TourNr → tracteur) vers
+`reload_tours.json`. L'app croise déjà ce fichier (best-effort) : dossiers sans KfzZugID
+mais avec un TourNr présent dans le mapping → rattachés au tracteur du tour.
+
+**Reste à faire** :
+1. Confirmer que la table `Tour` est disponible dans un dataset interrogeable
+   (Winsped_OrderOverview_Import ou Winsped_Flotte_Import) et relever ses colonnes.
+2. Ajouter au flow une paire requête+Create file → `reload_tours.json`
+   (DAX à écrire une fois les colonnes connues, ex. : TourNr, KfzZugID/LKW).
+3. Retirer éventuellement le filtre NOT(ISBLANK(KfzZugID)) de la requête orders 30 jours
+   et le remplacer par : KfzZugID non vide OU TourNr non vide (les dossiers planifiés
+   arrivent alors dans l'app et sont rattachés via le mapping).
