@@ -83,6 +83,13 @@ header input[type=date]{
 .btn-dataflow.loading{opacity:.7;cursor:wait;}
 .btn-outline{background:#fff;color:var(--blue);border:1px solid var(--blue);}
 .btn-outline:hover{background:var(--blue);color:#fff;}
+#truckSearch{
+  font-family:'Barlow',sans-serif;font-size:13px;font-weight:500;
+  padding:6px 12px;border-radius:7px;border:1px solid var(--line);
+  background:#fff;color:var(--text);width:150px;transition:.15s;
+}
+#truckSearch:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(0,102,179,.12);width:190px;}
+.search-hint{font-size:12px;color:var(--muted);margin:0 0 12px;font-family:'Barlow',sans-serif;}
 .chipbar{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px;}
 .chip{
   font-family:'Barlow',sans-serif;font-size:12.5px;font-weight:600;letter-spacing:.03em;
@@ -258,6 +265,7 @@ table.hist td{padding:7px 8px;border-bottom:1px solid #eef1f4;}
         <span><i class="dot o"></i> Rien avant J+n</span>
         <span><i class="dot r"></i> Dernière position connue (rien de prévu)</span>
       </div>
+      <input type="search" id="truckSearch" placeholder="&#128269; Camion&hellip;" autocomplete="off">
       <button class="btn btn-outline btn-sm" id="toggleLuBtn" title="Les camions livrant au Luxembourg (et sans position connue) sont masqués par défaut — hors périmètre de recherche Reload"></button>
     </div>
     <div class="chipbar" id="countryChips" style="display:none;"></div>
@@ -738,6 +746,11 @@ window.addEventListener('DOMContentLoaded',async()=>{
 document.getElementById('refDate').addEventListener('change', renderDashboard);
 document.getElementById('resetBtn').addEventListener('click', ()=>location.reload());
 document.getElementById('toggleLuBtn').addEventListener('click', ()=>{ showAllTrucks = !showAllTrucks; renderDashboard(); });
+let _searchTimer=null;
+document.getElementById('truckSearch').addEventListener('input', ()=>{
+  clearTimeout(_searchTimer);
+  _searchTimer = setTimeout(renderDashboard, 180);
+});
 document.getElementById('countryChips').addEventListener('click', (e)=>{
   const chip = e.target.closest ? e.target.closest('.chip') : null;
   if(!chip) return;
@@ -853,9 +866,16 @@ async function renderDashboard(){
     `<button class="chip${countryFilter.has(c)?' active':''}" data-country="${c}">${c} <span>${n}</span></button>`).join('');
   chipBar.style.display = countryList.length > 1 ? 'flex' : 'none';
 
-  const statuses = countryFilter.size
-    ? baseStatuses.filter(s => s.refOrder && s.refOrder.delLkz && countryFilter.has(normCountry(s.refOrder.delLkz)))
-    : baseStatuses;
+  let statuses;
+  const q = (document.getElementById('truckSearch').value || '').trim().toUpperCase();
+  if(q){
+    // Recherche par plaque : on cherche dans TOUTE la flotte, filtres LU/pays ignorés
+    statuses = allStatuses.filter(s => s.plate.toUpperCase().includes(q));
+  } else {
+    statuses = countryFilter.size
+      ? baseStatuses.filter(s => s.refOrder && s.refOrder.delLkz && countryFilter.has(normCountry(s.refOrder.delLkz)))
+      : baseStatuses;
+  }
   const listFleet = document.getElementById('listFleet');
   const listSub = document.getElementById('listSub');
   listFleet.innerHTML = '';
