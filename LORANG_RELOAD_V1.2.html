@@ -151,7 +151,17 @@ main{width:100%;padding:18px 22px 60px;}
 .dot{width:10px;height:10px;border-radius:50%;display:inline-block;}
 .dot.g{background:var(--green);} .dot.r{background:var(--red);} .dot.o{background:var(--orange);}
 
-#map{height:460px;border-radius:10px;width:100%;}
+.map-split{display:flex;gap:14px;align-items:stretch;}
+#map{height:460px;border-radius:10px;flex:1 1 75%;min-width:0;}
+.filter-side{
+  flex:0 0 25%;min-width:250px;max-width:360px;height:460px;box-sizing:border-box;
+  background:#fff;border:1px solid var(--line);border-radius:10px;
+  padding:14px 16px;display:flex;flex-direction:column;gap:13px;overflow:auto;
+}
+.filter-side h3{font-family:'Barlow',sans-serif;font-size:13px;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.06em;margin:0;}
+.filter-side .sf-status{flex-direction:column;gap:7px;}
+.filter-side .search-actions{margin-top:auto;}
+@media(max-width:950px){.map-split{flex-direction:column;}.filter-side{max-width:none;height:auto;flex:1 1 auto;}}
 .leaflet-popup-content{font-family:inherit;font-size:12.5px;}
 .leaflet-popup-content b{font-family:var(--mono);}
 
@@ -284,11 +294,42 @@ table.hist td{padding:7px 8px;border-bottom:1px solid #eef1f4;}
         <span><i class="dot o"></i> Rien avant J+n</span>
         <span><i class="dot r"></i> Dernière position connue (rien de prévu)</span>
       </div>
-      <button class="btn btn-blue" id="openSearchBtn" style="font-size:14.5px;font-weight:600;padding:10px 22px;border-radius:8px;">&#128269; Recherche</button>
       <button class="btn btn-outline btn-sm" id="toggleLuBtn" title="Les camions livrant au Luxembourg (et sans position connue) sont masqués par défaut — hors périmètre de recherche Reload"></button>
     </div>
     <div class="search-summary" id="searchSummary"></div>
-    <div id="map"></div>
+    <div class="map-split">
+      <div id="map"></div>
+      <aside class="filter-side">
+        <h3>&#128269; Recherche</h3>
+        <div>
+          <span class="sf-label">Pays de fin d'activit&eacute;</span>
+          <div class="sf-chiprow" id="sfCountries"></div>
+        </div>
+        <div>
+          <span class="sf-label">Num&eacute;ro de camion</span>
+          <input type="text" class="sf-input" id="sfPlate" placeholder="ex. LP1143 ou 1143" autocomplete="off">
+        </div>
+        <div>
+          <span class="sf-label">Lib&eacute;ration entre</span>
+          <div class="sf-dates">
+            <input type="date" class="sf-input" id="sfFrom">
+            <span>et</span>
+            <input type="date" class="sf-input" id="sfTo">
+          </div>
+        </div>
+        <div>
+          <span class="sf-label">Statut</span>
+          <div class="sf-status">
+            <label id="sfStatusRLbl" class="on"><input type="checkbox" id="sfStatusR" checked><i class="dotmini" style="background:var(--red);"></i> D&eacute;j&agrave; vide <span class="small">(rien de pr&eacute;vu)</span></label>
+            <label id="sfStatusOLbl" class="on"><input type="checkbox" id="sfStatusO" checked><i class="dotmini" style="background:var(--orange);"></i> &Agrave; pr&eacute;voir <span class="small">(encore en tourn&eacute;e)</span></label>
+          </div>
+        </div>
+        <div class="search-actions">
+          <button class="btn btn-ghost btn-sm" id="sfReset" style="background:#fff;color:var(--muted);border:1px solid var(--line);">Tout effacer</button>
+          <button class="btn btn-blue" id="sfApply">Rechercher</button>
+        </div>
+      </aside>
+    </div>
   </div>
 
   <div class="columns-wrap" id="columnsPanel" style="display:none;">
@@ -303,43 +344,6 @@ table.hist td{padding:7px 8px;border-bottom:1px solid #eef1f4;}
   </div>
 
 </main>
-
-<div class="modal-bg" id="searchModalBg">
-  <div class="modal" style="max-width:560px;">
-    <span class="closebtn" id="searchModalClose">&times;</span>
-    <h3>Centre de recherche</h3>
-    <div class="modalsub">Retrouver des camions par pays, p&eacute;riode de lib&eacute;ration, plaque ou statut</div>
-    <div class="search-form">
-      <div class="sf-full">
-        <span class="sf-label">Pays de fin d'activit&eacute;</span>
-        <div class="sf-chiprow" id="sfCountries"></div>
-      </div>
-      <div>
-        <span class="sf-label">Num&eacute;ro de camion</span>
-        <input type="text" class="sf-input" id="sfPlate" placeholder="ex. LP1143 ou 1143" autocomplete="off">
-      </div>
-      <div>
-        <span class="sf-label">Lib&eacute;ration entre</span>
-        <div class="sf-dates">
-          <input type="date" class="sf-input" id="sfFrom">
-          <span>et</span>
-          <input type="date" class="sf-input" id="sfTo">
-        </div>
-      </div>
-      <div class="sf-full">
-        <span class="sf-label">Statut</span>
-        <div class="sf-status">
-          <label id="sfStatusRLbl" class="on"><input type="checkbox" id="sfStatusR" checked><i class="dotmini" style="background:var(--red);"></i> D&eacute;j&agrave; vide <span class="small">(rien de pr&eacute;vu)</span></label>
-          <label id="sfStatusOLbl" class="on"><input type="checkbox" id="sfStatusO" checked><i class="dotmini" style="background:var(--orange);"></i> &Agrave; pr&eacute;voir <span class="small">(encore en tourn&eacute;e)</span></label>
-        </div>
-      </div>
-    </div>
-    <div class="search-actions">
-      <button class="btn btn-ghost btn-sm" id="sfReset" style="background:#fff;color:var(--muted);border:1px solid var(--line);">Tout effacer</button>
-      <button class="btn btn-blue" id="sfApply">Rechercher</button>
-    </div>
-  </div>
-</div>
 
 <div class="modal-bg" id="modalBg">
   <div class="modal">
@@ -804,22 +808,19 @@ document.getElementById('toggleLuBtn').addEventListener('click', ()=>{ showAllTr
 // ---------- Centre de recherche ----------
 let SEARCH = null;   // {countries:Set, from:Date|null, to:Date|null, plate:'', statuses:Set('r','o')}
 const sfSel = new Set();  // pays cochés dans le popup
-function openSearchModal(){
-  // Chips pays du popup : pays réellement présents (fin d'activité), toute la flotte
+function buildSearchChips(allStatuses){
+  // Chips pays du panneau : pays réellement présents (fin d'activité), toute la flotte
   const counts = {};
-  computeTruckStatuses(document.getElementById('refDate').valueAsDate).forEach(s=>{
+  allStatuses.forEach(s=>{
     const ro = s.refOrder || s.order;
     const c = ro && ro.delLkz ? normCountry(ro.delLkz) : null;
     if(c) counts[c] = (counts[c]||0)+1;
   });
+  Array.from(sfSel).forEach(c=>{ if(!counts[c]) sfSel.delete(c); });
   const box = document.getElementById('sfCountries');
   box.innerHTML = Object.entries(counts).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]))
     .map(([c,n])=>`<button type="button" class="chip${sfSel.has(c)?' active':''}" data-sfc="${c}">${c} <span>${n}</span></button>`).join('');
-  document.getElementById('searchModalBg').classList.add('open');
 }
-document.getElementById('openSearchBtn').addEventListener('click', openSearchModal);
-document.getElementById('searchModalClose').addEventListener('click', ()=>document.getElementById('searchModalBg').classList.remove('open'));
-document.getElementById('searchModalBg').addEventListener('click', (e)=>{ if(e.target.id==='searchModalBg') e.target.classList.remove('open'); });
 document.getElementById('sfCountries').addEventListener('click', (e)=>{
   const chip = e.target.closest ? e.target.closest('.chip') : null;
   if(!chip) return;
@@ -857,7 +858,6 @@ document.getElementById('sfApply').addEventListener('click', ()=>{
     statuses
   };
   if(!SEARCH.countries.size && !SEARCH.from && !SEARCH.to && !SEARCH.plate && statuses.size===2) SEARCH = null;
-  document.getElementById('searchModalBg').classList.remove('open');
   renderDashboard();
 });
 
@@ -949,6 +949,7 @@ async function renderDashboard(){
   document.getElementById('dayLabelMap').textContent = label;
 
   const allStatuses = computeTruckStatuses(refDate);
+  buildSearchChips(allStatuses);
   // Par défaut : uniquement les camions livrant HORS Luxembourg (périmètre de recherche Reload)
   const baseStatuses = showAllTrucks ? allStatuses
     : allStatuses.filter(s => s.refOrder && s.refOrder.delLkz && normCountry(s.refOrder.delLkz) !== LU);
