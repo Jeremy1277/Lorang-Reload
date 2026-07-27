@@ -206,7 +206,7 @@ main{width:100%;padding:18px 22px 60px;}
 
 .modal-bg{
   position:fixed;inset:0;background:rgba(15,28,46,.55);display:none;
-  align-items:center;justify-content:center;z-index:50;padding:20px;
+  align-items:center;justify-content:center;z-index:1200;padding:20px;
 }
 .modal-bg.open{display:flex;}
 .modal{background:#fff;border-radius:12px;max-width:720px;width:100%;max-height:82vh;overflow:auto;padding:22px;}
@@ -284,10 +284,9 @@ table.hist td{padding:7px 8px;border-bottom:1px solid #eef1f4;}
         <span><i class="dot o"></i> Rien avant J+n</span>
         <span><i class="dot r"></i> Dernière position connue (rien de prévu)</span>
       </div>
-      <button class="btn btn-blue btn-sm" id="openSearchBtn">&#128269; Recherche</button>
+      <button class="btn btn-blue" id="openSearchBtn" style="font-size:14.5px;font-weight:600;padding:10px 22px;border-radius:8px;">&#128269; Recherche</button>
       <button class="btn btn-outline btn-sm" id="toggleLuBtn" title="Les camions livrant au Luxembourg (et sans position connue) sont masqués par défaut — hors périmètre de recherche Reload"></button>
     </div>
-    <div class="chipbar" id="countryChips" style="display:none;"></div>
     <div class="search-summary" id="searchSummary"></div>
     <div id="map"></div>
   </div>
@@ -377,7 +376,6 @@ let map = null;
 let markers = {};
 let mapRenderToken = 0;
 let showAllTrucks = false;
-const countryFilter = new Set();          // plate -> Leaflet marker
 
 const geoCache = JSON.parse(localStorage.getItem('lorangreload_geocache') || '{}');
 function saveGeoCache(){ localStorage.setItem('lorangreload_geocache', JSON.stringify(geoCache)); }
@@ -862,13 +860,7 @@ document.getElementById('sfApply').addEventListener('click', ()=>{
   document.getElementById('searchModalBg').classList.remove('open');
   renderDashboard();
 });
-document.getElementById('countryChips').addEventListener('click', (e)=>{
-  const chip = e.target.closest ? e.target.closest('.chip') : null;
-  if(!chip) return;
-  const c = chip.dataset.country;
-  countryFilter.has(c) ? countryFilter.delete(c) : countryFilter.add(c);
-  renderDashboard();
-});
+
 
 // ---------- statut journalier des camions ----------
 // status 'g' = livraison ce jour · 'o' = rien avant J+n (livraison future connue)
@@ -964,19 +956,6 @@ async function renderDashboard(){
   const luBtn = document.getElementById('toggleLuBtn');
   luBtn.textContent = showAllTrucks ? 'Masquer LU & sans position' : `Afficher tout (+${hiddenCount})`;
 
-  // Chips pays : générées dynamiquement, uniquement pour les pays réellement présents
-  const countryCounts = {};
-  baseStatuses.forEach(s => {
-    const c = (s.refOrder && s.refOrder.delLkz) ? normCountry(s.refOrder.delLkz) : null;
-    if(c) countryCounts[c] = (countryCounts[c]||0) + 1;
-  });
-  Array.from(countryFilter).forEach(c => { if(!countryCounts[c]) countryFilter.delete(c); });
-  const chipBar = document.getElementById('countryChips');
-  const countryList = Object.entries(countryCounts).sort((a,b)=> b[1]-a[1] || a[0].localeCompare(b[0]));
-  chipBar.innerHTML = countryList.map(([c,n]) =>
-    `<button class="chip${countryFilter.has(c)?' active':''}" data-country="${c}">${c} <span>${n}</span></button>`).join('');
-  chipBar.style.display = countryList.length > 1 ? 'flex' : 'none';
-
   let statuses;
   if(SEARCH){
     // Centre de recherche actif : critères combinés sur TOUTE la flotte, filtres LU/pays ignorés
@@ -996,9 +975,7 @@ async function renderDashboard(){
       return true;
     });
   } else {
-    statuses = countryFilter.size
-      ? baseStatuses.filter(s => s.refOrder && s.refOrder.delLkz && countryFilter.has(normCountry(s.refOrder.delLkz)))
-      : baseStatuses;
+    statuses = baseStatuses;
   }
   // Barre de résumé de recherche
   const sumEl = document.getElementById('searchSummary');
