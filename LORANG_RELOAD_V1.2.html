@@ -83,13 +83,32 @@ header input[type=date]{
 .btn-dataflow.loading{opacity:.7;cursor:wait;}
 .btn-outline{background:#fff;color:var(--blue);border:1px solid var(--blue);}
 .btn-outline:hover{background:var(--blue);color:#fff;}
-#truckSearch{
+.search-form{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px;}
+.search-form .sf-full{grid-column:1 / -1;}
+.sf-label{font-family:'Barlow',sans-serif;font-size:11.5px;font-weight:600;color:var(--slate);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:6px;}
+.sf-input{font-family:'Barlow',sans-serif;font-size:13.5px;padding:8px 11px;border-radius:7px;border:1px solid var(--line);background:#fff;color:var(--text);width:100%;box-sizing:border-box;}
+.sf-input:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(0,102,179,.12);}
+.sf-chiprow{display:flex;gap:7px;flex-wrap:wrap;}
+.sf-dates{display:flex;align-items:center;gap:8px;}
+.sf-dates span{font-size:12.5px;color:var(--muted);}
+.sf-status{display:flex;gap:10px;}
+.sf-status label{
+  flex:1;display:flex;align-items:center;gap:9px;cursor:pointer;
+  border:1.5px solid var(--line);border-radius:9px;padding:10px 13px;transition:.15s;
   font-family:'Barlow',sans-serif;font-size:13px;font-weight:500;
-  padding:6px 12px;border-radius:7px;border:1px solid var(--line);
-  background:#fff;color:var(--text);width:150px;transition:.15s;
 }
-#truckSearch:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(0,102,179,.12);width:190px;}
-.search-hint{font-size:12px;color:var(--muted);margin:0 0 12px;font-family:'Barlow',sans-serif;}
+.sf-status label.on{border-color:var(--blue);background:#f2f8fd;}
+.sf-status input{accent-color:var(--blue);width:16px;height:16px;}
+.sf-status .dotmini{width:10px;height:10px;border-radius:50%;flex:0 0 auto;}
+.search-actions{display:flex;justify-content:space-between;align-items:center;margin-top:20px;gap:10px;}
+.search-summary{
+  display:none;align-items:center;gap:10px;flex-wrap:wrap;
+  background:#f2f8fd;border:1px solid rgba(0,102,179,.25);border-radius:9px;
+  padding:8px 14px;margin:0 0 12px;font-family:'Barlow',sans-serif;font-size:12.5px;color:var(--navy);
+}
+.search-summary.on{display:flex;}
+.search-summary b{font-weight:700;}
+.search-summary .clear-search{margin-left:auto;cursor:pointer;color:var(--red);font-weight:600;background:none;border:none;font-family:inherit;font-size:12.5px;}
 .chipbar{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px;}
 .chip{
   font-family:'Barlow',sans-serif;font-size:12.5px;font-weight:600;letter-spacing:.03em;
@@ -265,10 +284,11 @@ table.hist td{padding:7px 8px;border-bottom:1px solid #eef1f4;}
         <span><i class="dot o"></i> Rien avant J+n</span>
         <span><i class="dot r"></i> Dernière position connue (rien de prévu)</span>
       </div>
-      <input type="search" id="truckSearch" placeholder="&#128269; Camion&hellip;" autocomplete="off">
+      <button class="btn btn-blue btn-sm" id="openSearchBtn">&#128269; Recherche</button>
       <button class="btn btn-outline btn-sm" id="toggleLuBtn" title="Les camions livrant au Luxembourg (et sans position connue) sont masqués par défaut — hors périmètre de recherche Reload"></button>
     </div>
     <div class="chipbar" id="countryChips" style="display:none;"></div>
+    <div class="search-summary" id="searchSummary"></div>
     <div id="map"></div>
   </div>
 
@@ -284,6 +304,43 @@ table.hist td{padding:7px 8px;border-bottom:1px solid #eef1f4;}
   </div>
 
 </main>
+
+<div class="modal-bg" id="searchModalBg">
+  <div class="modal" style="max-width:560px;">
+    <span class="closebtn" id="searchModalClose">&times;</span>
+    <h3>Centre de recherche</h3>
+    <div class="modalsub">Retrouver des camions par pays, p&eacute;riode de lib&eacute;ration, plaque ou statut</div>
+    <div class="search-form">
+      <div class="sf-full">
+        <span class="sf-label">Pays de fin d'activit&eacute;</span>
+        <div class="sf-chiprow" id="sfCountries"></div>
+      </div>
+      <div>
+        <span class="sf-label">Num&eacute;ro de camion</span>
+        <input type="text" class="sf-input" id="sfPlate" placeholder="ex. LP1143 ou 1143" autocomplete="off">
+      </div>
+      <div>
+        <span class="sf-label">Lib&eacute;ration entre</span>
+        <div class="sf-dates">
+          <input type="date" class="sf-input" id="sfFrom">
+          <span>et</span>
+          <input type="date" class="sf-input" id="sfTo">
+        </div>
+      </div>
+      <div class="sf-full">
+        <span class="sf-label">Statut</span>
+        <div class="sf-status">
+          <label id="sfStatusRLbl" class="on"><input type="checkbox" id="sfStatusR" checked><i class="dotmini" style="background:var(--red);"></i> D&eacute;j&agrave; vide <span class="small">(rien de pr&eacute;vu)</span></label>
+          <label id="sfStatusOLbl" class="on"><input type="checkbox" id="sfStatusO" checked><i class="dotmini" style="background:var(--orange);"></i> &Agrave; pr&eacute;voir <span class="small">(encore en tourn&eacute;e)</span></label>
+        </div>
+      </div>
+    </div>
+    <div class="search-actions">
+      <button class="btn btn-ghost btn-sm" id="sfReset" style="background:#fff;color:var(--muted);border:1px solid var(--line);">Tout effacer</button>
+      <button class="btn btn-blue" id="sfApply">Rechercher</button>
+    </div>
+  </div>
+</div>
 
 <div class="modal-bg" id="modalBg">
   <div class="modal">
@@ -746,10 +803,64 @@ window.addEventListener('DOMContentLoaded',async()=>{
 document.getElementById('refDate').addEventListener('change', renderDashboard);
 document.getElementById('resetBtn').addEventListener('click', ()=>location.reload());
 document.getElementById('toggleLuBtn').addEventListener('click', ()=>{ showAllTrucks = !showAllTrucks; renderDashboard(); });
-let _searchTimer=null;
-document.getElementById('truckSearch').addEventListener('input', ()=>{
-  clearTimeout(_searchTimer);
-  _searchTimer = setTimeout(renderDashboard, 180);
+// ---------- Centre de recherche ----------
+let SEARCH = null;   // {countries:Set, from:Date|null, to:Date|null, plate:'', statuses:Set('r','o')}
+const sfSel = new Set();  // pays cochés dans le popup
+function openSearchModal(){
+  // Chips pays du popup : pays réellement présents (fin d'activité), toute la flotte
+  const counts = {};
+  computeTruckStatuses(document.getElementById('refDate').valueAsDate).forEach(s=>{
+    const ro = s.refOrder || s.order;
+    const c = ro && ro.delLkz ? normCountry(ro.delLkz) : null;
+    if(c) counts[c] = (counts[c]||0)+1;
+  });
+  const box = document.getElementById('sfCountries');
+  box.innerHTML = Object.entries(counts).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]))
+    .map(([c,n])=>`<button type="button" class="chip${sfSel.has(c)?' active':''}" data-sfc="${c}">${c} <span>${n}</span></button>`).join('');
+  document.getElementById('searchModalBg').classList.add('open');
+}
+document.getElementById('openSearchBtn').addEventListener('click', openSearchModal);
+document.getElementById('searchModalClose').addEventListener('click', ()=>document.getElementById('searchModalBg').classList.remove('open'));
+document.getElementById('searchModalBg').addEventListener('click', (e)=>{ if(e.target.id==='searchModalBg') e.target.classList.remove('open'); });
+document.getElementById('sfCountries').addEventListener('click', (e)=>{
+  const chip = e.target.closest ? e.target.closest('.chip') : null;
+  if(!chip) return;
+  const c = chip.dataset.sfc;
+  sfSel.has(c) ? sfSel.delete(c) : sfSel.add(c);
+  chip.classList.toggle('active');
+});
+['sfStatusR','sfStatusO'].forEach(id=>{
+  document.getElementById(id).addEventListener('change', (e)=>{
+    document.getElementById(id+'Lbl').classList.toggle('on', e.target.checked);
+  });
+});
+document.getElementById('sfReset').addEventListener('click', ()=>{
+  sfSel.clear();
+  document.getElementById('sfPlate').value='';
+  document.getElementById('sfFrom').value='';
+  document.getElementById('sfTo').value='';
+  document.getElementById('sfStatusR').checked=true; document.getElementById('sfStatusRLbl').classList.add('on');
+  document.getElementById('sfStatusO').checked=true; document.getElementById('sfStatusOLbl').classList.add('on');
+  document.querySelectorAll('#sfCountries .chip').forEach(c=>c.classList.remove('active'));
+  SEARCH = null;
+  renderDashboard();
+});
+document.getElementById('sfApply').addEventListener('click', ()=>{
+  const statuses = new Set();
+  if(document.getElementById('sfStatusR').checked) statuses.add('r');
+  if(document.getElementById('sfStatusO').checked) statuses.add('o');
+  const fromV = document.getElementById('sfFrom').value;
+  const toV = document.getElementById('sfTo').value;
+  SEARCH = {
+    countries: new Set(sfSel),
+    from: fromV ? new Date(fromV) : null,
+    to: toV ? new Date(toV) : null,
+    plate: document.getElementById('sfPlate').value.trim().toUpperCase(),
+    statuses
+  };
+  if(!SEARCH.countries.size && !SEARCH.from && !SEARCH.to && !SEARCH.plate && statuses.size===2) SEARCH = null;
+  document.getElementById('searchModalBg').classList.remove('open');
+  renderDashboard();
 });
 document.getElementById('countryChips').addEventListener('click', (e)=>{
   const chip = e.target.closest ? e.target.closest('.chip') : null;
@@ -867,14 +978,41 @@ async function renderDashboard(){
   chipBar.style.display = countryList.length > 1 ? 'flex' : 'none';
 
   let statuses;
-  const q = (document.getElementById('truckSearch').value || '').trim().toUpperCase();
-  if(q){
-    // Recherche par plaque : on cherche dans TOUTE la flotte, filtres LU/pays ignorés
-    statuses = allStatuses.filter(s => s.plate.toUpperCase().includes(q));
+  if(SEARCH){
+    // Centre de recherche actif : critères combinés sur TOUTE la flotte, filtres LU/pays ignorés
+    statuses = allStatuses.filter(s => {
+      if(SEARCH.plate && !s.plate.toUpperCase().includes(SEARCH.plate)) return false;
+      if(SEARCH.statuses.size && !SEARCH.statuses.has(s.status==='r' ? 'r' : 'o')) return false;
+      const ro = s.refOrder || s.order;
+      if(SEARCH.countries.size){
+        if(!(ro && ro.delLkz && SEARCH.countries.has(normCountry(ro.delLkz)))) return false;
+      }
+      if(SEARCH.from || SEARCH.to){
+        const lib = ro && ro.entVon ? ro.entVon : null;   // date de libération = fin d'activité connue
+        if(!lib) return false;
+        if(SEARCH.from && lib < SEARCH.from) return false;
+        if(SEARCH.to){ const end = new Date(SEARCH.to); end.setHours(23,59,59); if(lib > end) return false; }
+      }
+      return true;
+    });
   } else {
     statuses = countryFilter.size
       ? baseStatuses.filter(s => s.refOrder && s.refOrder.delLkz && countryFilter.has(normCountry(s.refOrder.delLkz)))
       : baseStatuses;
+  }
+  // Barre de résumé de recherche
+  const sumEl = document.getElementById('searchSummary');
+  if(SEARCH){
+    const bits = [];
+    if(SEARCH.countries.size) bits.push('pays : <b>'+Array.from(SEARCH.countries).join(', ')+'</b>');
+    if(SEARCH.from || SEARCH.to) bits.push('libération : <b>'+(SEARCH.from?SEARCH.from.toLocaleDateString('fr-FR'):'…')+' → '+(SEARCH.to?SEARCH.to.toLocaleDateString('fr-FR'):'…')+'</b>');
+    if(SEARCH.plate) bits.push('camion : <b>'+SEARCH.plate+'</b>');
+    if(SEARCH.statuses.size===1) bits.push(SEARCH.statuses.has('r')?'<b>déjà vides</b>':'<b>à prévoir</b>');
+    sumEl.innerHTML = '&#128269; <b>'+statuses.length+'</b> camion'+(statuses.length>1?'s':'')+' — '+(bits.join(' · ')||'tous critères')+' <button class="clear-search" id="clearSearchBtn">&#10005; Effacer la recherche</button>';
+    sumEl.classList.add('on');
+    document.getElementById('clearSearchBtn').addEventListener('click', ()=>{ SEARCH=null; renderDashboard(); });
+  } else {
+    sumEl.classList.remove('on');
   }
   const listFleet = document.getElementById('listFleet');
   const listSub = document.getElementById('listSub');
