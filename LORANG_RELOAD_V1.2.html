@@ -636,7 +636,7 @@ async function getToken(interactive){
     catch(e){console.warn('[Reload][Graph] Token silencieux impossible.',e);}
   }
   if(!interactive) return null;
-  const r=await app.acquireTokenPopup({scopes:GRAPH_SCOPES});
+  const r=await app.acquireTokenPopup({scopes:GRAPH_SCOPES, redirectUri: window.location.origin + '/auth.html'});
   return r.accessToken;
 }
 let cachedSiteId=null;

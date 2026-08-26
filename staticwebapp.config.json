@@ -16,6 +16,13 @@
       ]
     },
     {
+      "route": "/auth.html",
+      "allowedRoles": [
+        "anonymous",
+        "authenticated"
+      ]
+    },
+    {
       "route": "/*",
       "allowedRoles": [
         "lorang"
