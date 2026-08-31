@@ -1271,5 +1271,23 @@ document.getElementById('modalClose').addEventListener('click', ()=> document.ge
 document.getElementById('modalBg').addEventListener('click', (e)=>{ if(e.target.id==='modalBg') document.getElementById('modalBg').classList.remove('open'); });
 
 </script>
+<script>
+/* Connexion Microsoft silencieuse au chargement : on réutilise la session Entra
+   du verrou Azure SWA (iframe invisible via /auth.html, X-Frame-Options SAMEORIGIN).
+   En cas d'échec, le comportement existant (popup au clic) reste le repli. */
+(async () => {
+  try {
+    if (typeof msal === 'undefined') return;
+    if (location.protocol === 'file:' || location.hostname === 'localhost') return;
+    const app = await getMSAL();
+    if (app.getAllAccounts().length) return;
+    const me = await fetch('/.auth/me', {cache:'no-store'}).then(r=>r.ok?r.json():null).catch(()=>null);
+    const hint = me && me.clientPrincipal && me.clientPrincipal.userDetails;
+    if (!hint) return;
+    await app.ssoSilent({ scopes: GRAPH_SCOPES, loginHint: hint, redirectUri: window.location.origin + '/auth.html' });
+    console.log('[SSO] session Microsoft établie silencieusement pour', hint);
+  } catch (e) { console.warn('[SSO] silencieux indisponible :', e && (e.errorCode || e.message)); }
+})();
+</script>
 </body>
 </html>
