@@ -1,19 +1,8 @@
 {
   "routes": [
     {
-      "route": "/.auth/login/github",
-      "statusCode": 404
-    },
-    {
-      "route": "/.auth/login/twitter",
-      "statusCode": 404
-    },
-    {
       "route": "/.auth/*",
-      "allowedRoles": [
-        "anonymous",
-        "authenticated"
-      ]
+      "statusCode": 404
     },
     {
       "route": "/auth.html",
@@ -23,18 +12,17 @@
       ]
     },
     {
+      "route": "/LORANG_RELOAD_V1.1.html",
+      "statusCode": 404
+    },
+    {
       "route": "/*",
       "allowedRoles": [
-        "lorang"
+        "anonymous",
+        "authenticated"
       ]
     }
   ],
-  "responseOverrides": {
-    "401": {
-      "redirect": "/.auth/login/aad?post_login_redirect_uri=.referrer",
-      "statusCode": 302
-    }
-  },
   "globalHeaders": {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "SAMEORIGIN",
