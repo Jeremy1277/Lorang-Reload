@@ -19,7 +19,8 @@
    4. LorangPortal.ai({ system, user | messages, max_tokens }) relaie vers Claude
       via Service Center (/api/portal/ai) : une seule clé API, côté Service Center.
 
-   v3 — septembre 2026 · Dépendance : msal-browser 2.x chargé avant ce script.
+   v3.2 — septembre 2026 · Dépendance : msal-browser 2.x, chargé avant OU après ce script
+   (l'ordre des balises <script> n'a plus d'importance : voir « guet MSAL » plus bas).
    ═══════════════════════════════════════════════════════════════════════════ */
 (function (global) {
   'use strict';
@@ -146,14 +147,47 @@
     return m;
   }
   function installSharedMsal() {
-    if (typeof msal === 'undefined' || msal.__lorangShared) return;
+    if (typeof msal === 'undefined' || !msal || msal.__lorangShared) return;
     const Orig = msal.PublicClientApplication;
+    if (typeof Orig !== 'function') return;
     const factory = function () { return sharedMsal(Orig); };
     factory.prototype = Orig.prototype;
     try { msal.PublicClientApplication = factory; msal.__lorangOriginal = Orig; msal.__lorangShared = true; }
     catch (e) { console.warn('[portal] instance MSAL partagée indisponible :', e && e.message); }
   }
-  try { installSharedMsal(); } catch (e) {}
+  /* ── ordre de chargement indifférent ─────────────────────────────────────────
+     Certaines applications embarquent la bibliothèque MSAL APRÈS ce script (Fleet, Order,
+     Analyse : le bundle est inclus dans la page elle-même). Dans ce cas `msal` n'existe pas
+     encore ici et la fabrique ne peut pas être posée ; l'application crée alors une deuxième
+     instance et la porte reste fermée. On pose donc un guet sur `window.msal`, puis sur
+     `msal.PublicClientApplication`, pour installer la fabrique dès que la bibliothèque arrive. */
+  function watchMsal() {
+    let box;
+    try {
+      Object.defineProperty(global, 'msal', {
+        configurable: true,
+        get() { return box; },
+        set(v) {
+          box = v;
+          try {
+            if (!v || v.__lorangShared) return;
+            if (typeof v.PublicClientApplication === 'function') { installSharedMsal(); return; }
+            let Ctor;
+            Object.defineProperty(v, 'PublicClientApplication', {
+              configurable: true,
+              get() { return Ctor; },
+              set(C) {
+                Ctor = C;
+                try { delete v.PublicClientApplication; v.PublicClientApplication = C; installSharedMsal(); }
+                catch (e) {}
+              },
+            });
+          } catch (e) {}
+        },
+      });
+    } catch (e) { console.warn('[portal] guet MSAL indisponible :', e && e.message); }
+  }
+  try { if (typeof msal === 'undefined') watchMsal(); else installSharedMsal(); } catch (e) {}
 
   /* ── passeport (jeton d'identité) ── */
   const RETRYABLE = /timed_out|monitor_window_timeout|token_renewal_error|no_tokens_found|invalid_grant|interaction_required|login_required|consent_required/i;
