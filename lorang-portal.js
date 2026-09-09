@@ -113,15 +113,47 @@
   const AUTH_URI = () => location.origin + '/auth.html';
   const decodeJwt = t => { try { return JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); } catch (e) { return null; } };
 
-  function newMsal() {
-    return new msal.PublicClientApplication({
-      auth: { clientId: CLIENT_ID, authority: AUTHORITY, redirectUri: location.origin, navigateToLoginRequestUrl: false },
-      /* storeAuthStateInCookie : indispensable quand le navigateur bloque les cookies tiers */
-      cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: true },
-      /* iframes de renouvellement : 6 s par défaut, trop court sur un réseau d'entreprise */
-      system: { iframeHashTimeout: 20000, loadFrameTimeout: 20000, windowHashTimeout: 20000, navigateFrameWait: 500 },
+  const MSAL_CFG = {
+    auth: { clientId: CLIENT_ID, authority: AUTHORITY, redirectUri: location.origin, navigateToLoginRequestUrl: false },
+    /* storeAuthStateInCookie : indispensable quand le navigateur bloque les cookies tiers */
+    cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: true },
+    /* iframes de renouvellement : 6 s par défaut, trop court sur un réseau d'entreprise */
+    system: { iframeHashTimeout: 20000, loadFrameTimeout: 20000, windowHashTimeout: 20000, navigateFrameWait: 500 },
+  };
+  /* ── UNE SEULE instance MSAL par page ────────────────────────────────────────
+     Chaque application crée historiquement la sienne (`new msal.PublicClientApplication(...)`).
+     Deux instances sur la même page = deux `handleRedirectPromise()` concurrents : celle qui perd
+     la course ne voit aucun compte et relance une connexion — d'où les « choisir un compte »
+     inattendus et les portes qui restent fermées alors que la session est valide.
+     On installe donc une fabrique qui renvoie toujours l'instance du portail, configurée pour le
+     renouvellement silencieux, et on rend `initialize()` / `handleRedirectPromise()` idempotents. */
+  function sharedMsal(Orig) {
+    if (S.msal) return S.msal;
+    const Ctor = Orig || msal.__lorangOriginal || msal.PublicClientApplication;
+    const m = new Ctor(MSAL_CFG);
+    if (typeof m.initialize === 'function') { const f = m.initialize.bind(m); m.initialize = () => (S.initP || (S.initP = f())); }
+    else m.initialize = () => Promise.resolve();
+    const h = m.handleRedirectPromise.bind(m);
+    m.handleRedirectPromise = hash => (S.hrpP || (S.hrpP = h(hash)));
+    /* les flux silencieux (iframe cachée) doivent atterrir sur /auth.html : sur la racine, l'iframe
+       recharge toute l'application et MSAL abandonne au bout du délai (« timed_out ») */
+    ['acquireTokenSilent', 'ssoSilent'].forEach(k => {
+      if (typeof m[k] !== 'function') return;
+      const f = m[k].bind(m);
+      m[k] = req => f(Object.assign({ redirectUri: AUTH_URI() }, req || {}, (req && req.redirectUri) ? { redirectUri: req.redirectUri } : {}));
     });
+    S.msal = m;
+    return m;
   }
+  function installSharedMsal() {
+    if (typeof msal === 'undefined' || msal.__lorangShared) return;
+    const Orig = msal.PublicClientApplication;
+    const factory = function () { return sharedMsal(Orig); };
+    factory.prototype = Orig.prototype;
+    try { msal.PublicClientApplication = factory; msal.__lorangOriginal = Orig; msal.__lorangShared = true; }
+    catch (e) { console.warn('[portal] instance MSAL partagée indisponible :', e && e.message); }
+  }
+  try { installSharedMsal(); } catch (e) {}
 
   /* ── passeport (jeton d'identité) ── */
   const RETRYABLE = /timed_out|monitor_window_timeout|token_renewal_error|no_tokens_found|invalid_grant|interaction_required|login_required|consent_required/i;
@@ -204,10 +236,10 @@
     if (typeof msal === 'undefined') { setGate('Librairie Microsoft (MSAL) non chargée.', true); throw new Error('msal absent'); }
     setGate('Vérification de l’accès…');
     try {
-      if (!S.msal) {
-        if (opts.msal) { S.msal = opts.msal; S.ownMsal = false; }
-        else { S.msal = newMsal(); S.ownMsal = true; await S.msal.initialize(); }
-      }
+      installSharedMsal();
+      /* opts.msal est ignoré : l'instance du portail est celle que l'application a reçue elle aussi */
+      if (!S.msal) sharedMsal();
+      await S.msal.initialize();
       const hint = takeHint();
       S.account = await acquireAccount(hint);
       if (!S.account) {
