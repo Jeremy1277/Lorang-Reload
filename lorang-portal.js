@@ -1,39 +1,42 @@
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-   LORANG PORTAL â€” porte d'accÃ¨s unique des applications Lorang
-   â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-   Toute application Lorang ne s'ouvre que si l'utilisateur est identifiÃ© dans
+/* ═══════════════════════════════════════════════════════════════════════════
+   LORANG PORTAL — porte d'accès unique des applications Lorang
+   ───────────────────────────────────────────────────────────────────────────
+   Toute application Lorang ne s'ouvre que si l'utilisateur est identifié dans
    LORANG Service Center (compte Microsoft du tenant Lorang, app Topo3PL).
 
    Fonctionnement
    1. L'application appelle LorangPortal.init({ app:'turnover', msal: instanceMsal? })
-      avant d'afficher quoi que ce soit (une porte plein Ã©cran couvre la page).
-   2. Le portail rÃ©cupÃ¨re silencieusement le passeport (jeton d'identitÃ© Microsoft) :
-      compte dÃ©jÃ  connu dans ce navigateur, sinon SSO silencieux grÃ¢ce Ã  l'indice
-      Â« #sso=<e-mail> Â» ajoutÃ© par le Service Center quand il lance l'application.
-   3. Le passeport ET le billet de lancement (Â« #lt=â€¦ Â», dÃ©livrÃ© par le Service Center
-      au moment du clic, 2 minutes) sont prÃ©sentÃ©s Ã  /api/portal/me qui les vÃ©rifie
-      â†’ la porte s'efface et une session d'appli (10 h, cet onglet) est mÃ©morisÃ©e pour les F5.
-      URL tapÃ©e directement (ni billet ni session) â†’ accÃ¨s coupÃ©, renvoi vers l'accueil du
-      Service Center (aucune relance automatique : il faut cliquer sur l'application).
+      avant d'afficher quoi que ce soit (une porte plein écran couvre la page).
+   2. Le portail récupère silencieusement le passeport (jeton d'identité Microsoft) :
+      compte déjà connu dans ce navigateur, sinon SSO silencieux grâce à l'indice
+      « #sso=<e-mail> » ajouté par le Service Center quand il lance l'application.
+   3. Le passeport (et le billet de lancement « #lt=… » quand on vient du Service Center)
+      sont présentés à /api/portal/me → la porte s'efface et une session d'appli (10 h,
+      partagée entre les onglets de ce navigateur) est mémorisée.
+      Sans compte Microsoft connu : aller-retour silencieux vers Microsoft (prompt=none), puis
+      connexion Microsoft classique — jamais de renvoi en boucle vers le Service Center.
+      (Le serveur peut réexiger le billet : variable PORTAL_STRICT=1 côté Service Center.)
    4. LorangPortal.ai({ system, user | messages, max_tokens }) relaie vers Claude
-      via Service Center (/api/portal/ai) : une seule clÃ© API, cÃ´tÃ© Service Center.
+      via Service Center (/api/portal/ai) : une seule clé API, côté Service Center.
 
-   DÃ©pendance : msal-browser 2.x chargÃ© avant ce script.
-   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+   v3 — septembre 2026 · Dépendance : msal-browser 2.x chargé avant ce script.
+   ═══════════════════════════════════════════════════════════════════════════ */
 (function (global) {
   'use strict';
   const PORTAL_URL = 'https://ambitious-flower-0eaea7810.7.azurestaticapps.net';
   const CLIENT_ID = '56ae2586-8bb0-48a9-afd5-cb7a6bf12cc3';
   const AUTHORITY = 'https://login.microsoftonline.com/08978fe5-0eb9-4b54-8f3d-dc0653f6dffa';
   const OIDC_SCOPES = ['openid', 'profile', 'email'];
-  const HINT_KEY = 'lorang-portal-hint';
-  const TRIED_KEY = 'lorang-portal-tried';
-  const TICKET_KEY = 'lorang-portal-ticket';
-  const SESSION_KEY = 'lorang-portal-session';
+  const HINT_KEY = 'lorang-portal-hint';        /* localStorage : e-mail du compte (indice SSO) */
+  const TRIED_KEY = 'lorang-portal-tried';      /* sessionStorage : aller-retour prompt=none déjà tenté */
+  const TRIED2_KEY = 'lorang-portal-tried2';    /* sessionStorage : connexion interactive déjà lancée */
+  const TICKET_KEY = 'lorang-portal-ticket';    /* sessionStorage : billet de lancement (transitoire) */
+  const SESSION_PFX = 'lorang-portal-session:'; /* localStorage : session d'appli, partagée entre onglets */
+  const SESSION_TTL_MS = 10 * 3600e3;
 
-  const S = { app: '', msal: null, account: null, user: null, ready: false, error: null, listeners: [] };
+  const S = { app: '', msal: null, account: null, user: null, ready: false, error: null, listeners: [], pending: null, ownMsal: false };
 
-  /* â”€â”€ porte plein Ã©cran â”€â”€ */
+  /* ── porte plein écran ── */
   const CSS = `#lpGate{position:fixed;inset:0;z-index:100000;background:#050505;display:flex;align-items:center;justify-content:center;padding:20px;font-family:'Barlow',system-ui,sans-serif;transition:opacity .4s ease}
 #lpGate.hide{opacity:0;pointer-events:none}
 #lpGate .c{width:min(420px,100%);text-align:center;color:#a8bccd;animation:lpUp .6s cubic-bezier(.2,.8,.25,1) both}
@@ -57,10 +60,11 @@
     if (g) return g;
     const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
     g = document.createElement('div'); g.id = 'lpGate';
-    g.innerHTML = `<div class="c"><div class="spin" id="lpSpin"></div><div class="t">LORANG <b id="lpApp"></b></div><div class="s" id="lpMsg">VÃ©rification de l'accÃ¨sâ€¦</div><div class="btns" id="lpBtns" style="display:none"><a class="b p" id="lpOpenSc" href="${PORTAL_URL}/">Ouvrir LORANG Service Center</a><button class="b g" type="button" id="lpRetry">RÃ©essayer</button></div><div class="f">AccÃ¨s rÃ©servÃ© aux comptes Microsoft Lorang â€” identification via LORANG Service Center.</div></div>`;
+    g.innerHTML = `<div class="c"><div class="spin" id="lpSpin"></div><div class="t">LORANG <b id="lpApp"></b></div><div class="s" id="lpMsg">Vérification de l'accès…</div><div class="btns" id="lpBtns" style="display:none"><button class="b p" type="button" id="lpLogin">Se connecter avec Microsoft</button><a class="b g" id="lpOpenSc" href="${PORTAL_URL}/">Ouvrir LORANG Service Center</a><button class="b g" type="button" id="lpRetry">Réessayer</button></div><div class="f">Accès réservé aux comptes Microsoft Lorang — identification via LORANG Service Center.</div></div>`;
     (document.body || document.documentElement).appendChild(g);
     if (!document.body) document.addEventListener('DOMContentLoaded', () => { if (g.parentNode !== document.body && document.getElementById('lpGate')) document.body.appendChild(g); });
-    g.querySelector('#lpRetry').onclick = () => { S.error = null; try { sessionStorage.removeItem(TRIED_KEY); } catch (e) {} setGate('VÃ©rification de lâ€™accÃ¨sâ€¦'); init(S.opts).catch(() => {}); };
+    g.querySelector('#lpRetry').onclick = () => { S.error = null; S.pending = null; try { sessionStorage.removeItem(TRIED_KEY); sessionStorage.removeItem(TRIED2_KEY); } catch (e) {} setGate('Vérification de l’accès…'); init(S.opts).catch(() => {}); };
+    g.querySelector('#lpLogin').onclick = () => { interactiveLogin(); };
     return g;
   }
   function setGate(msg, err) {
@@ -69,98 +73,160 @@
     const m = g.querySelector('#lpMsg'); m.textContent = msg || ''; m.className = 's' + (err ? ' err' : '');
     g.querySelector('#lpSpin').style.display = err ? 'none' : '';
     g.querySelector('#lpBtns').style.display = err ? '' : 'none';
-    if (err) { const sc = g.querySelector('#lpOpenSc'); sc.href = PORTAL_URL + '/?from=' + encodeURIComponent(S.app || ''); }
+    if (err) { const sc = g.querySelector('#lpOpenSc'); sc.href = PORTAL_URL + '/?open=' + encodeURIComponent(S.app || ''); }
   }
   function hideGate() { const g = document.getElementById('lpGate'); if (g) { g.classList.add('hide'); setTimeout(() => g.remove(), 500); } }
 
-  /* â”€â”€ indice SSO transmis par le Service Center (#sso=<e-mail>) â”€â”€ */
+  /* ── indice SSO et billet transmis par le Service Center (#sso=<e-mail>&lt=<billet>) ── */
+  const ls = { get(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }, del(k) { try { localStorage.removeItem(k); } catch (e) {} } };
+  const ss = { get(k) { try { return sessionStorage.getItem(k) || ''; } catch (e) { return ''; } }, set(k, v) { try { sessionStorage.setItem(k, v); } catch (e) {} }, del(k) { try { sessionStorage.removeItem(k); } catch (e) {} } };
   function takeHint() {
     let hint = null;
     try {
-      let h = location.hash || '';
+      const h = location.hash || '';
       const m = h.match(/[#&]sso=([^&]+)/);
       const t = h.match(/[#&]lt=([^&]+)/);
       if (m) hint = decodeURIComponent(m[1]);
-      if (t) sessionStorage.setItem(TICKET_KEY, decodeURIComponent(t[1]));
+      if (t) ss.set(TICKET_KEY, decodeURIComponent(t[1]));
       if (m || t) { const rest = h.replace(/[#&]sso=[^&]+/, '').replace(/[#&]lt=[^&]+/, '').replace(/^&/, '#'); history.replaceState(null, '', location.pathname + location.search + (rest.length > 1 ? rest : '')); }
-      if (hint) sessionStorage.setItem(HINT_KEY, hint); else hint = sessionStorage.getItem(HINT_KEY);
+      if (hint) ls.set(HINT_KEY, hint); else hint = ls.get(HINT_KEY);
     } catch (e) {}
     return hint;
   }
-  const getStore = k => { try { return sessionStorage.getItem(k) || ''; } catch (e) { return ''; } };
+  /* session d'appli : partagée entre les onglets du navigateur, expirée localement avant le serveur */
+  function sessionGet() {
+    try { const o = JSON.parse(ls.get(SESSION_PFX + S.app) || 'null'); if (o && o.v && o.exp > Date.now()) return o.v; } catch (e) {}
+    return '';
+  }
+  function sessionSet(v) { ls.set(SESSION_PFX + S.app, JSON.stringify({ v, exp: Date.now() + SESSION_TTL_MS - 5 * 60e3 })); }
+  function sessionDel() { ls.del(SESSION_PFX + S.app); }
   function goToServiceCenter(reason) {
-    /* accÃ¨s coupÃ© : LORANG Service Center est le seul point d'entrÃ©e â€” aucune relance automatique de l'appli */
-    setGate(reason || 'AccÃ¨s refusÃ© â€” LORANG Service Center est le seul point dâ€™entrÃ©e des applications Lorang. Redirectionâ€¦');
-    const url = PORTAL_URL + '/';
+    setGate(reason || 'LORANG Service Center va vous identifier, puis rouvrir cette application…');
+    const url = PORTAL_URL + '/?open=' + encodeURIComponent(S.app || '');
     setTimeout(() => location.replace(url), 400);
     return new Promise(() => {}); /* la page part */
   }
+  const inIframe = () => { try { return window.top !== window.self; } catch (e) { return true; } };
 
+  /* page de retour dédiée aux flux silencieux : l'iframe MSAL doit atterrir sur une page légère
+     qui rend le hash au parent — jamais sur index.html, qui rechargerait toute l'application */
+  const AUTH_URI = () => location.origin + '/auth.html';
   const decodeJwt = t => { try { return JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); } catch (e) { return null; } };
 
-  /* â”€â”€ passeport (jeton d'identitÃ©) â”€â”€ */
+  function newMsal() {
+    return new msal.PublicClientApplication({
+      auth: { clientId: CLIENT_ID, authority: AUTHORITY, redirectUri: location.origin, navigateToLoginRequestUrl: false },
+      /* storeAuthStateInCookie : indispensable quand le navigateur bloque les cookies tiers */
+      cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: true },
+      /* iframes de renouvellement : 6 s par défaut, trop court sur un réseau d'entreprise */
+      system: { iframeHashTimeout: 20000, loadFrameTimeout: 20000, windowHashTimeout: 20000, navigateFrameWait: 500 },
+    });
+  }
+
+  /* ── passeport (jeton d'identité) ── */
+  const RETRYABLE = /timed_out|monitor_window_timeout|token_renewal_error|no_tokens_found|invalid_grant|interaction_required|login_required|consent_required/i;
+  async function silentToken(req) {
+    try { return await S.msal.acquireTokenSilent(req); }
+    catch (e) {
+      const code = (e && (e.errorCode || e.message)) || '';
+      if (!RETRYABLE.test(code)) throw e;
+      console.warn('[portal] renouvellement silencieux en échec (' + code + ') — nouvelle tentative');
+      return S.msal.acquireTokenSilent(Object.assign({}, req, { forceRefresh: true }));
+    }
+  }
   async function idToken(force) {
-    if (!S.msal || !S.account) throw new Error('non connectÃ©');
-    const req = { scopes: OIDC_SCOPES, account: S.account, forceRefresh: !!force };
-    let r = await S.msal.acquireTokenSilent(req);
+    if (!S.msal || !S.account) throw new Error('non connecté');
+    const req = { scopes: OIDC_SCOPES, account: S.account, forceRefresh: !!force, redirectUri: AUTH_URI() };
+    let r = await silentToken(req);
     const p = r && r.idToken ? decodeJwt(r.idToken) : null;
-    if (!force && (!p || !p.exp || p.exp * 1000 - Date.now() < 5 * 60e3)) { r = await S.msal.acquireTokenSilent(Object.assign({}, req, { forceRefresh: true })); }
+    if (!force && (!p || !p.exp || p.exp * 1000 - Date.now() < 5 * 60e3)) r = await silentToken(Object.assign({}, req, { forceRefresh: true }));
     if (!r || !r.idToken) throw new Error('passeport indisponible');
     return r.idToken;
   }
 
+  /* ── vérification auprès du Service Center ── */
   async function checkPortal() {
     const t = await idToken(false);
-    /* requÃªte Â« simple Â» (text/plain, sans en-tÃªte personnalisÃ©) : pas de prÃ©-vol CORS, la plateforme Azure
-       rÃ©pondant elle-mÃªme aux OPTIONS sans relayer nos en-tÃªtes */
-    const ticket = getStore(TICKET_KEY), session = getStore(SESSION_KEY);
-    const res = await fetch(PORTAL_URL + '/api/portal/me', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(Object.assign({ token: t, app: S.app }, ticket ? { ticket } : { session })), cache: 'no-store' });
+    const ticket = ss.get(TICKET_KEY), session = sessionGet();
+    const body = { token: t, app: S.app };
+    if (ticket) body.ticket = ticket; else if (session) body.session = session;
+    /* requête « simple » (text/plain) : pas de pré-vol CORS */
+    const res = await fetch(PORTAL_URL + '/api/portal/me', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(body), cache: 'no-store' });
     let j = null; try { j = await res.json(); } catch (e) {}
-    if (!res.ok || !j || !j.ok) { const err = new Error((j && j.error) || ('Service Center injoignable (HTTP ' + res.status + ')')); err.code = j && j.code; throw err; }
-    try { sessionStorage.removeItem(TICKET_KEY); if (j.session) sessionStorage.setItem(SESSION_KEY, j.session); } catch (e) {}
+    if (!res.ok || !j || !j.ok) { const err = new Error((j && j.error) || ('Service Center injoignable (HTTP ' + res.status + ')')); err.code = j && j.code; err.status = res.status; throw err; }
+    ss.del(TICKET_KEY); if (j.session) sessionSet(j.session);
     return j;
   }
 
-  /* â”€â”€ initialisation â”€â”€ */
-  async function init(opts) {
-    opts = opts || {}; S.opts = opts; S.app = opts.app || S.app || 'app';
-    if (typeof msal === 'undefined') { setGate('Librairie Microsoft (MSAL) non chargÃ©e.', true); throw new Error('msal absent'); }
-    setGate('VÃ©rification de lâ€™accÃ¨sâ€¦');
+  /* ── compte Microsoft : cache → retour de redirection → aller-retour silencieux ── */
+  async function acquireAccount(hint) {
+    let rr = null, redirectErr = null;
+    try { rr = await S.msal.handleRedirectPromise(); } catch (e) { redirectErr = e; }
+    if (rr && rr.account) return rr.account;
+    const accs = S.msal.getAllAccounts();
+    const found = (hint && accs.find(a => (a.username || '').toLowerCase() === hint.toLowerCase())) || accs[0] || null;
+    if (found) return found;
+    if (redirectErr) console.warn('[portal] retour Microsoft :', redirectErr.errorCode || redirectErr.message);
+    /* 1er passage : aller-retour Microsoft sans interaction (redirection plein écran, fonctionne
+       même quand les cookies tiers sont bloqués) */
+    if (!ss.get(TRIED_KEY)) {
+      ss.set(TRIED_KEY, '1');
+      setGate('Reconnaissance de votre session Microsoft…');
+      await S.msal.loginRedirect({ scopes: OIDC_SCOPES, prompt: 'none', loginHint: hint || undefined, redirectUri: location.origin });
+      await new Promise(() => {});
+    }
+    /* 2e passage : Microsoft a demandé une interaction (session expirée, MFA…) → connexion
+       classique, une seule fois par onglet ; avec un poste Lorang déjà connecté, elle est instantanée */
+    if (!ss.get(TRIED2_KEY)) {
+      ss.set(TRIED2_KEY, '1');
+      setGate('Connexion Microsoft…');
+      await S.msal.loginRedirect({ scopes: OIDC_SCOPES, loginHint: hint || undefined, redirectUri: location.origin });
+      await new Promise(() => {});
+    }
+    return null;
+  }
+  function interactiveLogin() {
+    if (!S.msal) { location.href = PORTAL_URL + '/?open=' + encodeURIComponent(S.app || ''); return; }
+    setGate('Connexion Microsoft…');
+    ss.del(TRIED_KEY); ss.set(TRIED2_KEY, '1');
+    S.msal.loginRedirect({ scopes: OIDC_SCOPES, loginHint: ls.get(HINT_KEY) || undefined, prompt: 'select_account', redirectUri: location.origin }).catch(e => setGate('Connexion impossible — ' + (e.errorCode || e.message), true));
+  }
+
+  /* ── initialisation (idempotente : guard() et init() partagent la même promesse) ── */
+  function init(opts) {
+    if (inIframe()) return Promise.resolve(null);
+    if (S.pending) return S.pending;
+    S.pending = initOnce(opts || {}).catch(e => { S.pending = null; throw e; });
+    return S.pending;
+  }
+  async function initOnce(opts) {
+    S.opts = opts; S.app = opts.app || S.app || 'app';
+    if (typeof msal === 'undefined') { setGate('Librairie Microsoft (MSAL) non chargée.', true); throw new Error('msal absent'); }
+    setGate('Vérification de l’accès…');
     try {
       if (!S.msal) {
-        S.msal = opts.msal || new msal.PublicClientApplication({ auth: { clientId: CLIENT_ID, authority: AUTHORITY, redirectUri: location.origin }, cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: false } });
-        if (!opts.msal) await S.msal.initialize();
-        const rr = await S.msal.handleRedirectPromise().catch(() => null);
-        if (rr && rr.account) S.account = rr.account;
+        if (opts.msal) { S.msal = opts.msal; S.ownMsal = false; }
+        else { S.msal = newMsal(); S.ownMsal = true; await S.msal.initialize(); }
       }
       const hint = takeHint();
-      if (!getStore(TICKET_KEY) && !getStore(SESSION_KEY)) { await goToServiceCenter(); }
+      S.account = await acquireAccount(hint);
       if (!S.account) {
-        const accs = S.msal.getAllAccounts();
-        S.account = (hint && accs.find(a => (a.username || '').toLowerCase() === hint.toLowerCase())) || accs[0] || null;
+        const err = new Error('Connexion Microsoft requise pour ouvrir cette application.'); err.noSession = true; throw err;
       }
-      if (!S.account && hint) {
-        try {
-          const sr = await S.msal.ssoSilent({ scopes: OIDC_SCOPES, loginHint: hint, redirectUri: location.origin + '/auth.html' });
-          if (sr && sr.account) S.account = sr.account;
-        } catch (e) { console.warn('[portal] SSO silencieux refusÃ© :', e && (e.errorCode || e.message)); }
-      }
-      if (!S.account) {
-        /* dernier recours silencieux : aller-retour Microsoft sans interaction (prompt=none), une seule fois par session */
-        let tried = false; try { tried = sessionStorage.getItem(TRIED_KEY) === '1'; } catch (e) {}
-        if (!tried) {
-          try { sessionStorage.setItem(TRIED_KEY, '1'); } catch (e) {}
-          setGate('Reconnaissance de la session Microsoftâ€¦');
-          await S.msal.loginRedirect({ scopes: OIDC_SCOPES, prompt: 'none', loginHint: hint || undefined, redirectUri: location.origin });
-          await new Promise(() => {}); /* la page est en cours de redirection */
-        }
-        await goToServiceCenter();
-      }
-      try { sessionStorage.removeItem(TRIED_KEY); } catch (e) {}
+      ss.del(TRIED_KEY); ss.del(TRIED2_KEY);
       if (S.msal.setActiveAccount) S.msal.setActiveAccount(S.account);
+      if (!ls.get(HINT_KEY) && S.account.username) ls.set(HINT_KEY, S.account.username);
       let me;
       try { me = await checkPortal(); }
-      catch (e) { if (e && e.code === 'ticket') { try { sessionStorage.removeItem(SESSION_KEY); } catch (x) {} await goToServiceCenter(); } throw e; }
+      catch (e) {
+        if (e && e.code === 'ticket') {
+          /* billet ou session refusés par le serveur : on retente une fois sans (le serveur accepte
+             le passeport seul, sauf mode strict → il renvoie alors vers le Service Center) */
+          sessionDel(); ss.del(TICKET_KEY);
+          try { me = await checkPortal(); }
+          catch (e2) { if (e2 && e2.code === 'ticket') { await goToServiceCenter(); } throw e2; }
+        } else throw e;
+      }
       S.user = me.user; S.apps = me.apps || []; S.aiAvailable = !!me.ai; S.ready = true; S.error = null;
       hideGate();
       S.listeners.forEach(fn => { try { fn(S.user); } catch (e) { console.error(e); } });
@@ -169,48 +235,50 @@
     } catch (e) {
       S.error = e; S.ready = false;
       const msg = e && e.message ? e.message : String(e);
-      setGate((e && e.noSession) ? msg : ('AccÃ¨s refusÃ© â€” ' + msg), true);
-      console.warn('[portal] accÃ¨s refusÃ© :', msg);
+      const timedOut = /timed_out|monitor_window_timeout|token_renewal/i.test(msg);
+      setGate(e && e.noSession ? msg
+        : timedOut ? 'Session Microsoft non renouvelée à temps. Cliquez sur « Se connecter avec Microsoft ».'
+        : ('Accès refusé — ' + msg), true);
+      console.warn('[portal] accès refusé :', msg);
       if (opts.onDenied) opts.onDenied(e);
       throw e;
     }
   }
 
-  /* â”€â”€ relais IA (clÃ© unique cÃ´tÃ© Service Center) â”€â”€ */
+  /* ── relais IA (clé unique côté Service Center) ── */
   async function ai(payload) {
-    if (!S.ready) throw new Error('portail non initialisÃ©');
+    if (!S.ready) throw new Error('portail non initialisé');
     const t = await idToken(false);
     const body = Object.assign({}, payload || {});
     if (!body.messages && body.user) { body.messages = [{ role: 'user', content: String(body.user) }]; delete body.user; }
-    const res = await fetch(PORTAL_URL + '/api/portal/ai', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ token: t, app: S.app, session: getStore(SESSION_KEY), payload: body }) });
+    const res = await fetch(PORTAL_URL + '/api/portal/ai', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ token: t, app: S.app, session: sessionGet(), payload: body }) });
     let j = null; try { j = await res.json(); } catch (e) {}
     if (!res.ok || !j || !j.ok) throw new Error((j && j.error) || ('relais IA indisponible (HTTP ' + res.status + ')'));
     return j.text;
   }
 
-  /* â”€â”€ utilitaire pour le Service Center : ajoute l'indice SSO aux liens des applis â”€â”€ */
+  /* ── utilitaire pour le Service Center : ajoute billet + indice SSO aux liens des applis ── */
   function withSso(url, upn, ticket) {
     if (!url) return url;
     const parts = []; if (ticket) parts.push('lt=' + encodeURIComponent(ticket)); if (upn) parts.push('sso=' + encodeURIComponent(upn));
     return parts.length ? url + (url.includes('#') ? '&' : '#') + parts.join('&') : url;
   }
 
-  /* â”€â”€ garde universelle (Ã  placer dans <head>, avant le code de l'application) â”€â”€
-     Synchrone : sans billet ni session, la page est masquÃ©e et renvoyÃ©e vers le Service Center
-     avant mÃªme que l'application ne dÃ©marre ; sinon la porte reste affichÃ©e jusqu'Ã  la
-     vÃ©rification du passeport (init au DOMContentLoaded, quand MSAL est chargÃ©). */
+  /* ── garde universelle (à placer dans <head>, avant le code de l'application) ──
+     Masque la page derrière la porte et lance la vérification dès que MSAL est chargé.
+     Jamais exécutée dans une iframe (renouvellement silencieux MSAL). */
   function guard(opts) {
+    if (inIframe()) return false;
     opts = opts || {}; S.app = opts.app || S.app || 'app';
     takeHint();
-    if (!getStore(TICKET_KEY) && !getStore(SESSION_KEY)) { goToServiceCenter(); return false; }
-    setGate('VÃ©rification de lâ€™accÃ¨sâ€¦');
+    setGate('Vérification de l’accès…');
     const run = () => { init(Object.assign({ msal: (typeof msal !== 'undefined' && opts.msal) || undefined }, opts)).catch(() => {}); };
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => setTimeout(run, 0)); else setTimeout(run, 0);
     return true;
   }
 
   global.LorangPortal = {
-    init, ai, idToken, withSso, guard,
+    init, ai, idToken, withSso, guard, login: interactiveLogin,
     get user() { return S.user; }, get account() { return S.account; }, get msal() { return S.msal; }, get ready() { return S.ready; }, get aiAvailable() { return !!S.aiAvailable; },
     onReady(fn) { if (S.ready) fn(S.user); else S.listeners.push(fn); },
     PORTAL_URL,
