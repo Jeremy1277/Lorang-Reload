@@ -29,6 +29,8 @@
     "Referrer-Policy": "same-origin"
   },
   "navigationFallback": {
-    "rewrite": "/LORANG_RELOAD_V1.2.html"
+    "rewrite": "/LORANG_RELOAD_V1.2.html",
+    "exclude": ["/api/*", "/docs/*", "/data/*",
+                "/*.{js,json,css,map,txt,md,ico,png,jpg,svg,webp,woff,woff2,xlsx,zip}"]
   }
 }
